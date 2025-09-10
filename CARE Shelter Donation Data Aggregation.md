@@ -22,9 +22,14 @@ we want to make a program that...
     - take data from these various sources and transfer them into DonorSnap field names so we can upload them into DonorSnap
     - get current donors from [qgive, paypal, square, shelterluv] and load them into donorsnap
 
-I need:
+I need from you all:
     0: A technical PoC from DonorSnap
-    1: To see how DonorSnap accepts data, the documentation around that excel upload page
+    1: To see how DonorSnap accepts data, the documentation around that excel upload page DONE: https://donorsnap.com/support/docs/importing-donations-with-excel-import-training-webinar/
+
+    "You can import spreadsheets (Maintenance > Excel Import). So as long as your program can export OUT to Excel, importing is doable. 
+    The challenge will be reformatting the spreadsheet to look like DonorSnap: the fields you use in DonorSnap with the information you want to track in DonorSnap (for example, the PaymentMethod, Appeal, Campaign, DonationType, Accounting Code, Batch Code, etc.)
+
+
     1.1: An example spreadsheet with at least 1 row of data
     2: ONLY IF 1 is completed, a field-to-field mapping from Chuck, example:
         qgive.name -> donorsnap.name
