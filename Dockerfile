@@ -35,8 +35,8 @@ RUN git init && \
 # Build dependencies only - this layer will be cached
 RUN cargo build --release --bin web
 
-# Remove dummy source, templates, and git
-RUN rm -rf src templates .git
+# Remove dummy source, templates, git, and compiled artifacts
+RUN rm -rf src templates .git target/release/care* target/release/deps/care* target/release/build/care*
 
 # Copy actual source code
 COPY src ./src
@@ -49,10 +49,12 @@ COPY .git ./.git
 # This will be fast because dependencies are already compiled
 RUN cargo build --release --bin web
 
-# Runtime stage - Using Google Distroless for minimal attack surface
-FROM gcr.io/distroless/cc-debian12:latest
+# Runtime stage - Using Debian slim for compatibility
+FROM debian:bookworm-slim
 
 WORKDIR /app
+
+# No additional runtime dependencies needed (glibc is included)
 
 # Copy the binary from builder
 COPY --from=builder /app/target/release/web /app/web

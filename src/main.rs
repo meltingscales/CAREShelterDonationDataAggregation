@@ -280,14 +280,17 @@ impl CsvStorage {
 
 #[tokio::main]
 async fn main() {
-    // Initialize structured logging with JSON output for GCP Cloud Logging
-    tracing_subscriber::registry()
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info"))
-        )
-        .with(tracing_subscriber::fmt::layer().json())
-        .init();
+    // Initialize logging (disable in Cloud Run to avoid startup issues)
+    // Cloud Run sets K_SERVICE environment variable
+    if std::env::var("K_SERVICE").is_err() {
+        tracing_subscriber::registry()
+            .with(
+                EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| EnvFilter::new("info"))
+            )
+            .with(tracing_subscriber::fmt::layer().compact())
+            .init();
+    }
 
     tracing::info!("Starting C.A.R.E. Shelter Donation Data Aggregation server");
 
@@ -323,8 +326,12 @@ async fn main() {
                 .layer(RequestBodyLimitLayer::new(100 * 1024 * 1024))
         );
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    tracing::info!("Server listening on http://0.0.0.0:8080");
+    // Cloud Run provides PORT environment variable, default to 8080
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("0.0.0.0:{}", port);
+
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    tracing::info!("Server listening on {}", addr);
 
     // Graceful shutdown handler
     axum::serve(listener, app)
