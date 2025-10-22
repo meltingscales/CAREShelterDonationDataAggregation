@@ -41,6 +41,38 @@ clean:
     rm -rf .ropeproject/
     cargo clean
 
+# Security Scanning
+# =================
+
+# Run Trivy security scan on the Docker image
+trivy-scan:
+    #!/usr/bin/env bash
+    echo "Building Docker image for scanning..."
+    docker build -t care-shelter-donation-aggregation:scan .
+    echo ""
+    echo "Running Trivy vulnerability scan..."
+    trivy image --severity HIGH,CRITICAL care-shelter-donation-aggregation:scan
+
+# Run Trivy scan with all severity levels
+trivy-scan-all:
+    #!/usr/bin/env bash
+    echo "Building Docker image for scanning..."
+    docker build -t care-shelter-donation-aggregation:scan .
+    echo ""
+    echo "Running Trivy vulnerability scan (all severities)..."
+    trivy image care-shelter-donation-aggregation:scan
+
+# Run Trivy scan and save report to file
+trivy-scan-report:
+    #!/usr/bin/env bash
+    echo "Building Docker image for scanning..."
+    docker build -t care-shelter-donation-aggregation:scan .
+    echo ""
+    echo "Running Trivy vulnerability scan and saving report..."
+    trivy image --severity HIGH,CRITICAL --format json --output trivy-report.json care-shelter-donation-aggregation:scan
+    trivy image --severity HIGH,CRITICAL --format table --output trivy-report.txt care-shelter-donation-aggregation:scan
+    echo "Reports saved to trivy-report.json and trivy-report.txt"
+
 # Docker operations
 # ================
 
