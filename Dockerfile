@@ -49,15 +49,10 @@ COPY .git ./.git
 # This will be fast because dependencies are already compiled
 RUN cargo build --release --bin web
 
-# Runtime stage
-FROM debian:bookworm-slim
+# Runtime stage - Using Google Distroless for minimal attack surface
+FROM gcr.io/distroless/cc-debian12:latest
 
 WORKDIR /app
-
-# Install runtime dependencies
-RUN apt-get update && \
-    apt-get install -y ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from builder
 COPY --from=builder /app/target/release/web /app/web
