@@ -203,10 +203,23 @@
         <h2>📥 Download Your Aggregated Data</h2>
         <p>Your CSV file is ready. Click the button below to download it.</p>
         <a href="/download/{{ session_id }}" class="download-button" download="aggregated_donations.csv">
-            Download CSV File
+            Download Aggregated CSV
         </a>
+
+        {% if has_duplicates %}
+        <a href="/download-duplicates/{{ session_id }}" class="download-button" download="removed_duplicates.csv" style="background-color: #6c757d; margin-top: 10px;">
+            Download Removed Duplicates CSV
+        </a>
+        {% endif %}
+
+        {% if !deduplication_log.is_empty() %}
+        <a href="/download-log/{{ session_id }}" class="download-button" download="deduplication_log.txt" style="background-color: #17a2b8; margin-top: 10px;">
+            Download Deduplication Log (.txt)
+        </a>
+        {% endif %}
+
         <p style="margin-top: 15px; color: #666; font-size: 0.9em;">
-            ⚠️ <strong>Important:</strong> This download link expires in 1 minute and can only be used once. The file will be automatically deleted after download for your privacy.
+            ⚠️ <strong>Important:</strong> Download links expire in 1 minute and can only be used once. Files will be automatically deleted after download for your privacy.
         </p>
     </div>
 

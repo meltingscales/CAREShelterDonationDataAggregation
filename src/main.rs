@@ -90,6 +90,7 @@ struct SuccessTemplate {
     deduplication_log: String,
     records_before_dedup: usize,
     duplicates_removed: usize,
+    has_duplicates: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -218,6 +219,7 @@ struct ProcessResult {
     deduplication_log: String,
     records_before_dedup: usize,
     duplicates_removed: usize,
+    removed_duplicates_csv: Option<String>,
 }
 
 // PRIVACY: Download link expiration time in seconds
@@ -227,7 +229,7 @@ const DOWNLOAD_EXPIRY_SECONDS: u64 = 60; // 1 minute
 // PRIVACY: Data is stored only in memory and automatically cleaned up after 1 minute or on download
 #[derive(Clone)]
 struct CsvStorage {
-    data: Arc<Mutex<HashMap<String, (String, Instant)>>>,
+    data: Arc<Mutex<HashMap<String, (String, Option<String>, String, Instant)>>>,
 }
 
 impl CsvStorage {
@@ -237,23 +239,38 @@ impl CsvStorage {
         }
     }
 
-    fn store(&self, csv_data: String) -> String {
+    fn store(&self, csv_data: String, duplicates_csv: Option<String>, log: String) -> String {
         let session_id = Uuid::new_v4().to_string();
         let mut storage = self.data.lock().unwrap();
 
         // Clean up old entries (older than DOWNLOAD_EXPIRY_SECONDS)
         let now = Instant::now();
-        storage.retain(|_, (_, timestamp)| {
+        storage.retain(|_, (_, _, _, timestamp)| {
             now.duration_since(*timestamp) < Duration::from_secs(DOWNLOAD_EXPIRY_SECONDS)
         });
 
-        storage.insert(session_id.clone(), (csv_data, now));
+        storage.insert(session_id.clone(), (csv_data, duplicates_csv, log, now));
         session_id
     }
 
     fn retrieve_and_remove(&self, session_id: &str) -> Option<String> {
+        let storage = self.data.lock().unwrap();
+        storage.get(session_id).map(|(csv_data, _, _, _)| csv_data.clone())
+    }
+
+    fn retrieve_duplicates_and_remove(&self, session_id: &str) -> Option<String> {
+        let storage = self.data.lock().unwrap();
+        storage.get(session_id).and_then(|(_, duplicates_csv, _, _)| duplicates_csv.clone())
+    }
+
+    fn retrieve_log_and_remove(&self, session_id: &str) -> Option<String> {
+        let storage = self.data.lock().unwrap();
+        storage.get(session_id).map(|(_, _, log, _)| log.clone())
+    }
+
+    fn remove_session(&self, session_id: &str) {
         let mut storage = self.data.lock().unwrap();
-        storage.remove(session_id).map(|(csv_data, _)| csv_data)
+        storage.remove(session_id);
     }
 }
 
@@ -281,6 +298,8 @@ async fn main() {
         .route("/sample/download/:sheet_name", get(download_sample_csv))
         .route("/upload", post(upload_file))
         .route("/download/:session_id", get(download_csv))
+        .route("/download-duplicates/:session_id", get(download_duplicates_csv))
+        .route("/download-log/:session_id", get(download_log))
         .with_state(csv_storage);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
@@ -790,6 +809,66 @@ async fn download_csv(
     }
 }
 
+async fn download_duplicates_csv(
+    State(storage): State<CsvStorage>,
+    Path(session_id): Path<String>,
+) -> Response {
+    match storage.retrieve_duplicates_and_remove(&session_id) {
+        Some(csv_data) => {
+            (
+                [
+                    ("Content-Type", "text/csv"),
+                    ("Content-Disposition", "attachment; filename=\"removed_duplicates.csv\""),
+                ],
+                csv_data,
+            )
+                .into_response()
+        }
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: format!(
+                    "Download link has expired, is invalid, or no duplicates were found.\n\n\
+                    Download links expire after {} seconds ({} minute) or after the first download for security reasons.\n\n\
+                    Please upload your file again to generate a new download.",
+                    DOWNLOAD_EXPIRY_SECONDS,
+                    DOWNLOAD_EXPIRY_SECONDS / 60
+                ),
+            };
+            error_template.into_response()
+        }
+    }
+}
+
+async fn download_log(
+    State(storage): State<CsvStorage>,
+    Path(session_id): Path<String>,
+) -> Response {
+    match storage.retrieve_log_and_remove(&session_id) {
+        Some(log_data) => {
+            (
+                [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Disposition", "attachment; filename=\"deduplication_log.txt\""),
+                ],
+                log_data,
+            )
+                .into_response()
+        }
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: format!(
+                    "Download link has expired or is invalid.\n\n\
+                    Download links expire after {} seconds ({} minute) or after the first download for security reasons.\n\n\
+                    Please upload your file again to generate a new download.",
+                    DOWNLOAD_EXPIRY_SECONDS,
+                    DOWNLOAD_EXPIRY_SECONDS / 60
+                ),
+            };
+            error_template.into_response()
+        }
+    }
+}
+
 async fn upload_file(
     State(storage): State<CsvStorage>,
     mut multipart: Multipart,
@@ -854,7 +933,8 @@ async fn upload_file(
                 Ok(result) => {
                     // If there are warnings or deduplication log, show success page
                     if !result.warnings.is_empty() || !result.deduplication_log.is_empty() {
-                        let session_id = storage.store(result.csv_data);
+                        let session_id = storage.store(result.csv_data, result.removed_duplicates_csv, result.deduplication_log.clone());
+                        let has_duplicates = result.duplicates_removed > 0;
                         let success_template = SuccessTemplate {
                             session_id,
                             total_rows: result.total_rows,
@@ -863,6 +943,7 @@ async fn upload_file(
                             deduplication_log: result.deduplication_log,
                             records_before_dedup: result.records_before_dedup,
                             duplicates_removed: result.duplicates_removed,
+                            has_duplicates,
                         };
                         return success_template.into_response();
                     } else {
@@ -1088,6 +1169,42 @@ fn process_spreadsheet(file_path: &str, filename: &str) -> Result<ProcessResult,
         )
     })?;
 
+    // Step 4: Generate CSV for removed duplicates (if any)
+    let removed_duplicates_csv = if !dedup_result.removed_duplicates.is_empty() {
+        let mut dup_csv_output = Vec::new();
+        {
+            let mut wtr = Writer::from_writer(&mut dup_csv_output);
+
+            // Write extended header with "Source Sheet" column
+            let mut dup_headers: Vec<&str> = DONORSNAP_FIELDS_WE_CARE_ABOUT.to_vec();
+            dup_headers.push("SourceSheet");
+            wtr.write_record(&dup_headers).map_err(|e| {
+                format!("Failed to write duplicates CSV header: {}", e)
+            })?;
+
+            // Write removed duplicate records with their source sheet
+            for (record, sheet_name) in &dedup_result.removed_duplicates {
+                let mut row: Vec<String> = record.iter().map(|s| s.to_string()).collect();
+                row.push(sheet_name.clone());
+                wtr.write_record(&row).map_err(|e| {
+                    format!("Failed to write duplicate record to CSV: {}", e)
+                })?;
+            }
+
+            wtr.flush().map_err(|e| {
+                format!("Failed to finalize duplicates CSV: {}", e)
+            })?;
+        }
+
+        let dup_csv_data = String::from_utf8(dup_csv_output).map_err(|e| {
+            format!("Failed to encode duplicates CSV as UTF-8: {}", e)
+        })?;
+
+        Some(dup_csv_data)
+    } else {
+        None
+    };
+
     Ok(ProcessResult {
         csv_data,
         warnings,
@@ -1096,6 +1213,7 @@ fn process_spreadsheet(file_path: &str, filename: &str) -> Result<ProcessResult,
         deduplication_log: dedup_result.log,
         records_before_dedup: dedup_result.records_before_dedup,
         duplicates_removed: dedup_result.duplicates_removed,
+        removed_duplicates_csv,
     })
 }
 

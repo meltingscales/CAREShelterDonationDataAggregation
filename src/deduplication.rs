@@ -31,6 +31,8 @@ pub struct DeduplicationResult {
     pub records_before_dedup: usize,
     /// Number of duplicates removed
     pub duplicates_removed: usize,
+    /// The records that were removed as duplicates (includes sheet source)
+    pub removed_duplicates: Vec<(StringRecord, String)>,
 }
 
 /// Deduplicates records based on email addresses (case-insensitive)
@@ -54,6 +56,7 @@ pub fn deduplicate_records(
     let mut log = String::new();
     let mut errors = Vec::new();
     let mut email_map: HashMap<String, (StringRecord, String)> = HashMap::new();
+    let mut removed_duplicates: Vec<(StringRecord, String)> = Vec::new();
 
     // Find the email column index
     let email_idx = headers.iter().position(|h| h == "EMail");
@@ -67,6 +70,7 @@ pub fn deduplicate_records(
             errors,
             records_before_dedup: records_count,
             duplicates_removed: 0,
+            removed_duplicates: vec![],
         };
     }
 
@@ -131,6 +135,16 @@ pub fn deduplicate_records(
             log.push_str(&format!("Row {}: New record from sheet '{}'\n", row_num + 1, source_sheet_name));
             log.push_str(&format!("Existing record from sheet '{}'\n", existing_sheet));
 
+            // Store the "loser" in removed duplicates before merging
+            // The record that gets discarded is the one from the lower-priority sheet
+            if source_sheet_name < existing_sheet {
+                // New record wins, existing record is removed
+                removed_duplicates.push((existing_record.clone(), existing_sheet.clone()));
+            } else {
+                // Existing record wins, new record is removed
+                removed_duplicates.push((record.clone(), source_sheet_name.to_string()));
+            }
+
             // Merge the records according to priority rules
             let merged = merge_records(
                 headers,
@@ -191,6 +205,7 @@ pub fn deduplicate_records(
         errors,
         records_before_dedup: records_before,
         duplicates_removed: duplicates,
+        removed_duplicates,
     }
 }
 
@@ -263,6 +278,7 @@ pub fn deduplicate_multi_sheet(
     let mut log = String::new();
     let mut errors = Vec::new();
     let mut email_map: HashMap<String, (StringRecord, String)> = HashMap::new();
+    let mut removed_duplicates: Vec<(StringRecord, String)> = Vec::new();
 
     // Count total records before deduplication
     let total_records_before: usize = sheet_records.iter().map(|(_, records)| records.len()).sum();
@@ -286,6 +302,7 @@ pub fn deduplicate_multi_sheet(
             errors,
             records_before_dedup: records_count,
             duplicates_removed: 0,
+            removed_duplicates: vec![],
         };
     }
 
@@ -356,6 +373,15 @@ pub fn deduplicate_multi_sheet(
                 ));
                 log.push_str(&format!("  Previously seen in sheet '{}'\n", existing_sheet));
 
+                // Store the "loser" in removed duplicates before merging
+                if sheet_name < *existing_sheet {
+                    // New record wins, existing record is removed
+                    removed_duplicates.push((existing_record.clone(), existing_sheet.clone()));
+                } else {
+                    // Existing record wins, new record is removed
+                    removed_duplicates.push((record.clone(), sheet_name.clone()));
+                }
+
                 // Merge the records according to priority rules
                 let merged = merge_records(
                     headers,
@@ -411,6 +437,7 @@ pub fn deduplicate_multi_sheet(
         errors,
         records_before_dedup: total_records_before,
         duplicates_removed: duplicates,
+        removed_duplicates,
     }
 }
 
