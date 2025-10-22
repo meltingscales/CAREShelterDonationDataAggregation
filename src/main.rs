@@ -21,6 +21,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use tower_http::services::ServeDir;
 use calamine::{open_workbook_auto, Data, Reader};
 use care_shelter_donation_aggregation::{
     get_all_sheet_mappings, get_field_descriptions, DONORSNAP_FIELDS_WE_CARE_ABOUT,
@@ -300,6 +301,7 @@ async fn main() {
         .route("/download/:session_id", get(download_csv))
         .route("/download-duplicates/:session_id", get(download_duplicates_csv))
         .route("/download-log/:session_id", get(download_log))
+        .nest_service("/static", ServeDir::new("static"))
         .with_state(csv_storage);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
