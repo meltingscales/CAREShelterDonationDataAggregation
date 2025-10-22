@@ -24,7 +24,7 @@ use axum::{
 use calamine::{open_workbook_auto, Data, Reader};
 use care_shelter_donation_aggregation::{
     get_all_sheet_mappings, get_field_descriptions, DONORSNAP_FIELDS_WE_CARE_ABOUT,
-    normalize_phone, normalize_state, deduplicate_multi_sheet,
+    normalize_phone, normalize_state, deduplicate_multi_sheet, FieldDescription,
 };
 use csv::{Writer, StringRecord};
 use std::collections::HashMap;
@@ -65,7 +65,7 @@ struct SampleTemplate {
     sheets: Vec<SampleSheetData>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct SampleSheetData {
     sheet_name: String,
     headers: Vec<String>,
@@ -117,6 +117,44 @@ struct OrphanFieldItem {
     description: String,
 }
 
+// API-specific structures
+#[derive(Serialize, ToSchema)]
+struct ApiProcessResult {
+    csv_data: String,
+    warnings: Vec<String>,
+    total_rows: usize,
+    sheets_processed: usize,
+    deduplication_log: String,
+    records_before_dedup: usize,
+    duplicates_removed: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+struct ApiValidationResult {
+    valid: bool,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    found_sheets: Vec<String>,
+    missing_sheets: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+struct VersionInfo {
+    git_hash: String,
+    git_branch: String,
+    git_date: String,
+}
+
+#[derive(Serialize, ToSchema)]
+struct HealthResponse {
+    status: String,
+}
+
+#[derive(Serialize, ToSchema)]
+struct SheetsResponse {
+    sheets: Vec<String>,
+}
+
 #[derive(Template)]
 #[template(path = "orphan_mappings.html")]
 struct OrphanMappingsTemplate {}
@@ -126,12 +164,35 @@ struct OrphanMappingsTemplate {}
     paths(
         mappings_api,
         orphan_mappings_api,
+        upload_api,
+        validate_api,
+        version_api,
+        health_api,
+        fields_api,
+        sheets_api,
+        sample_api,
     ),
     components(
-        schemas(MappingDisplay, MappingItem, OrphanMappingDisplay, OrphanFieldItem)
+        schemas(
+            MappingDisplay,
+            MappingItem,
+            OrphanMappingDisplay,
+            OrphanFieldItem,
+            ApiProcessResult,
+            ApiValidationResult,
+            VersionInfo,
+            HealthResponse,
+            FieldDescription,
+            SheetsResponse,
+            SampleSheetData,
+        )
     ),
     tags(
-        (name = "Mappings", description = "Field mapping information endpoints")
+        (name = "Mappings", description = "Field mapping information endpoints"),
+        (name = "Processing", description = "File upload and processing endpoints"),
+        (name = "Validation", description = "File validation endpoints"),
+        (name = "System", description = "System health and version information"),
+        (name = "Reference", description = "Reference data and sample information"),
     ),
     info(
         title = "C.A.R.E. Shelter Donation Data Aggregation API",
@@ -140,6 +201,10 @@ struct OrphanMappingsTemplate {}
         contact(
             name = "Henry Post",
             url = "http://henrypost.github.io/"
+        ),
+        license(
+            name = "GPL-3.0",
+            url = "https://www.gnu.org/licenses/gpl-3.0.html"
         )
     )
 )]
@@ -203,6 +268,13 @@ async fn main() {
         .route("/api/mappings", get(mappings_api))
         .route("/orphan-mappings", get(orphan_mappings_page))
         .route("/api/orphan-mappings", get(orphan_mappings_api))
+        .route("/api/upload", post(upload_api))
+        .route("/api/validate", post(validate_api))
+        .route("/api/version", get(version_api))
+        .route("/api/health", get(health_api))
+        .route("/api/fields", get(fields_api))
+        .route("/api/sheets", get(sheets_api))
+        .route("/api/sample/:sheet_name", get(sample_api))
         .merge(SwaggerUi::new("/openapi").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/faq", get(faq_page))
         .route("/sample", get(sample_page))
@@ -313,6 +385,261 @@ fn get_orphan_mappings() -> Vec<OrphanMappingDisplay> {
 
 async fn orphan_mappings_page() -> OrphanMappingsTemplate {
     OrphanMappingsTemplate {}
+}
+
+// API Endpoints
+
+#[utoipa::path(
+    post,
+    path = "/api/upload",
+    tag = "Processing",
+    responses(
+        (status = 200, description = "File processed successfully", body = ApiProcessResult),
+        (status = 400, description = "Invalid file or processing error")
+    )
+)]
+async fn upload_api(mut multipart: Multipart) -> Response {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        if field.name() == Some("file") {
+            let filename = field.file_name().unwrap_or("unknown").to_string();
+            let data = match field.bytes().await {
+                Ok(d) => d,
+                Err(e) => {
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "error": format!("Failed to read uploaded file: {}", e)
+                        }))
+                    ).into_response();
+                }
+            };
+
+            if data.is_empty() {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "Uploaded file is empty"
+                    }))
+                ).into_response();
+            }
+
+            // Save to temporary file
+            let temp_file = match NamedTempFile::new() {
+                Ok(f) => f,
+                Err(e) => {
+                    return (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": format!("Failed to create temporary file: {}", e)
+                        }))
+                    ).into_response();
+                }
+            };
+            let (mut file, path) = temp_file.into_parts();
+
+            if let Err(e) = tokio::task::block_in_place(|| {
+                std::io::Write::write_all(&mut file, &data)
+            }) {
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to save file: {}", e)
+                    }))
+                ).into_response();
+            }
+
+            // Process the file
+            match process_spreadsheet(path.to_str().unwrap(), &filename) {
+                Ok(result) => {
+                    let api_result = ApiProcessResult {
+                        csv_data: result.csv_data,
+                        warnings: result.warnings,
+                        total_rows: result.total_rows,
+                        sheets_processed: result.sheets_processed,
+                        deduplication_log: result.deduplication_log,
+                        records_before_dedup: result.records_before_dedup,
+                        duplicates_removed: result.duplicates_removed,
+                    };
+                    return (axum::http::StatusCode::OK, Json(api_result)).into_response();
+                }
+                Err(e) => {
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "error": e
+                        }))
+                    ).into_response();
+                }
+            }
+        }
+    }
+
+    (
+        axum::http::StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({
+            "error": "No file uploaded"
+        }))
+    ).into_response()
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/validate",
+    tag = "Validation",
+    responses(
+        (status = 200, description = "Validation result", body = ApiValidationResult),
+        (status = 400, description = "Invalid file")
+    )
+)]
+async fn validate_api(mut multipart: Multipart) -> Response {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        if field.name() == Some("file") {
+            let filename = field.file_name().unwrap_or("unknown").to_string();
+            let data = match field.bytes().await {
+                Ok(d) => d,
+                Err(e) => {
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "error": format!("Failed to read uploaded file: {}", e)
+                        }))
+                    ).into_response();
+                }
+            };
+
+            // Save to temporary file
+            let temp_file = match NamedTempFile::new() {
+                Ok(f) => f,
+                Err(e) => {
+                    return (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": format!("Failed to create temporary file: {}", e)
+                        }))
+                    ).into_response();
+                }
+            };
+            let (mut file, path) = temp_file.into_parts();
+
+            if let Err(e) = tokio::task::block_in_place(|| {
+                std::io::Write::write_all(&mut file, &data)
+            }) {
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to save file: {}", e)
+                    }))
+                ).into_response();
+            }
+
+            // Validate the file
+            let validation_result = validate_spreadsheet(path.to_str().unwrap(), &filename);
+            return (axum::http::StatusCode::OK, Json(validation_result)).into_response();
+        }
+    }
+
+    (
+        axum::http::StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({
+            "error": "No file uploaded"
+        }))
+    ).into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/version",
+    tag = "System",
+    responses(
+        (status = 200, description = "Version information", body = VersionInfo)
+    )
+)]
+async fn version_api() -> Json<VersionInfo> {
+    Json(VersionInfo {
+        git_hash: env!("GIT_HASH").to_string(),
+        git_branch: env!("GIT_BRANCH").to_string(),
+        git_date: env!("GIT_DATE").to_string(),
+    })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    tag = "System",
+    responses(
+        (status = 200, description = "Service is healthy", body = HealthResponse)
+    )
+)]
+async fn health_api() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok".to_string(),
+    })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/fields",
+    tag = "Reference",
+    responses(
+        (status = 200, description = "List of all DonorSnap target fields", body = Vec<FieldDescription>)
+    )
+)]
+async fn fields_api() -> Json<Vec<FieldDescription>> {
+    Json(get_field_descriptions())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/sheets",
+    tag = "Reference",
+    responses(
+        (status = 200, description = "List of supported sheet names", body = SheetsResponse)
+    )
+)]
+async fn sheets_api() -> Json<SheetsResponse> {
+    let sheets: Vec<String> = get_all_sheet_mappings()
+        .iter()
+        .map(|m| m.sheet_name.to_string())
+        .collect();
+
+    Json(SheetsResponse { sheets })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/sample/{sheet_name}",
+    tag = "Reference",
+    params(
+        ("sheet_name" = String, Path, description = "Name of the sheet to get sample data for")
+    ),
+    responses(
+        (status = 200, description = "Sample data for the specified sheet", body = SampleSheetData),
+        (status = 404, description = "Sheet not found")
+    )
+)]
+async fn sample_api(Path(sheet_name): Path<String>) -> Response {
+    let mappings = get_all_sheet_mappings();
+    let sheet_mapping = mappings.iter().find(|m| m.sheet_name == sheet_name);
+
+    match sheet_mapping {
+        Some(mapping) => {
+            let (headers, rows) = care_shelter_donation_aggregation::generate_sample_data_for_sheet(mapping, 5);
+            let sample_data = SampleSheetData {
+                sheet_name: mapping.sheet_name.to_string(),
+                headers,
+                rows,
+            };
+            (axum::http::StatusCode::OK, Json(sample_data)).into_response()
+        }
+        None => {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": format!("Sheet '{}' not found", sheet_name)
+                }))
+            ).into_response()
+        }
+    }
 }
 
 #[utoipa::path(
@@ -564,6 +891,83 @@ async fn upload_file(
         error_message: "No file was uploaded.\n\nPlease select an Excel file (.xlsx or .xls) and try again.".to_string(),
     };
     error_template.into_response()
+}
+
+fn validate_spreadsheet(file_path: &str, filename: &str) -> ApiValidationResult {
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+    let mut found_sheets = Vec::new();
+    let mut missing_sheets = Vec::new();
+
+    // Try to open the workbook
+    let mut workbook = match open_workbook_auto(file_path) {
+        Ok(wb) => wb,
+        Err(e) => {
+            errors.push(format!("Failed to open '{}' as an Excel file: {}", filename, e));
+            return ApiValidationResult {
+                valid: false,
+                errors,
+                warnings,
+                found_sheets,
+                missing_sheets,
+            };
+        }
+    };
+
+    // Check which sheets exist
+    let mappings = get_all_sheet_mappings();
+    for sheet_mapping in &mappings {
+        match workbook.worksheet_range(sheet_mapping.sheet_name) {
+            Ok(sheet) => {
+                found_sheets.push(sheet_mapping.sheet_name.to_string());
+
+                // Check if sheet has headers
+                let mut rows = sheet.rows();
+                if let Some(header_row) = rows.next() {
+                    let headers: Vec<String> = header_row.iter().map(|cell| data_to_string(cell)).collect();
+
+                    // Check for expected columns
+                    let field_mappings = sheet_mapping.to_hashmap();
+                    let mut missing_columns = Vec::new();
+
+                    for (_target, source) in &field_mappings {
+                        if !headers.iter().any(|h| h == source) {
+                            missing_columns.push(*source);
+                        }
+                    }
+
+                    if !missing_columns.is_empty() {
+                        warnings.push(format!(
+                            "Sheet '{}' is missing columns: {}",
+                            sheet_mapping.sheet_name,
+                            missing_columns.join(", ")
+                        ));
+                    }
+
+                    // Check if sheet has data rows
+                    if rows.next().is_none() {
+                        warnings.push(format!("Sheet '{}' has no data rows", sheet_mapping.sheet_name));
+                    }
+                } else {
+                    warnings.push(format!("Sheet '{}' has no header row", sheet_mapping.sheet_name));
+                }
+            }
+            Err(_) => {
+                missing_sheets.push(sheet_mapping.sheet_name.to_string());
+            }
+        }
+    }
+
+    // Validation passes if we found at least one sheet
+    let valid = !found_sheets.is_empty() && errors.is_empty();
+
+    ApiValidationResult {
+        valid,
+        errors,
+        warnings,
+        found_sheets,
+        missing_sheets,
+    }
 }
 
 fn process_spreadsheet(file_path: &str, filename: &str) -> Result<ProcessResult, String> {

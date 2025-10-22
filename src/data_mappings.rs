@@ -16,6 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 // Fake data generation for sample spreadsheet display
 const FAKE_FIRST_NAMES: &[&str] = &[
@@ -109,7 +110,7 @@ pub const DONORSNAP_FIELDS_WE_CARE_ABOUT: &[&str] = &[
     "DonationNote",
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FieldDescription {
     pub target_field: &'static str,
     pub description: &'static str,
@@ -428,7 +429,7 @@ pub fn generate_fake_data(source_field: &str, row_index: usize) -> String {
 }
 
 // Generate sample rows for a sheet
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SampleRow {
     pub cells: Vec<String>,
 }
