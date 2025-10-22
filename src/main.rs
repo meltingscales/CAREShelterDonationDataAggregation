@@ -22,6 +22,8 @@ use axum::{
     Router,
 };
 use tower_http::services::ServeDir;
+use tower_http::limit::RequestBodyLimitLayer;
+use tower::ServiceBuilder;
 use calamine::{open_workbook_auto, Data, Reader};
 use care_shelter_donation_aggregation::{
     get_all_sheet_mappings, get_field_descriptions, DONORSNAP_FIELDS_WE_CARE_ABOUT,
@@ -36,6 +38,7 @@ use serde::Serialize;
 use uuid::Uuid;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Template)]
 #[template(path = "home.html")]
@@ -277,6 +280,17 @@ impl CsvStorage {
 
 #[tokio::main]
 async fn main() {
+    // Initialize structured logging with JSON output for GCP Cloud Logging
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info"))
+        )
+        .with(tracing_subscriber::fmt::layer().json())
+        .init();
+
+    tracing::info!("Starting C.A.R.E. Shelter Donation Data Aggregation server");
+
     let csv_storage = CsvStorage::new();
 
     let app = Router::new()
@@ -302,11 +316,49 @@ async fn main() {
         .route("/download-duplicates/:session_id", get(download_duplicates_csv))
         .route("/download-log/:session_id", get(download_log))
         .nest_service("/static", ServeDir::new("static"))
-        .with_state(csv_storage);
+        .with_state(csv_storage)
+        .layer(
+            ServiceBuilder::new()
+                // Request body size limit: 100MB
+                .layer(RequestBodyLimitLayer::new(100 * 1024 * 1024))
+        );
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    println!("Server running at http://localhost:8080");
-    axum::serve(listener, app).await.unwrap();
+    tracing::info!("Server listening on http://0.0.0.0:8080");
+
+    // Graceful shutdown handler
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("Received Ctrl+C, shutting down gracefully");
+        },
+        _ = terminate => {
+            tracing::info!("Received SIGTERM, shutting down gracefully");
+        },
+    }
 }
 
 async fn home_page() -> HomeTemplate {
@@ -420,7 +472,20 @@ async fn orphan_mappings_page() -> OrphanMappingsTemplate {
     )
 )]
 async fn upload_api(mut multipart: Multipart) -> Response {
-    while let Some(field) = multipart.next_field().await.unwrap() {
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to parse multipart data: {}", e)
+                    }))
+                ).into_response();
+            }
+        };
+
         if field.name() == Some("file") {
             let filename = field.file_name().unwrap_or("unknown").to_string();
             let data = match field.bytes().await {
@@ -513,7 +578,20 @@ async fn upload_api(mut multipart: Multipart) -> Response {
     )
 )]
 async fn validate_api(mut multipart: Multipart) -> Response {
-    while let Some(field) = multipart.next_field().await.unwrap() {
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to parse multipart data: {}", e)
+                    }))
+                ).into_response();
+            }
+        };
+
         if field.name() == Some("file") {
             let filename = field.file_name().unwrap_or("unknown").to_string();
             let data = match field.bytes().await {
@@ -875,7 +953,21 @@ async fn upload_file(
     State(storage): State<CsvStorage>,
     mut multipart: Multipart,
 ) -> Response {
-    while let Some(field) = multipart.next_field().await.unwrap() {
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!(
+                        "Failed to parse uploaded file: {}\n\nThe request may be malformed or corrupted.",
+                        e
+                    ),
+                };
+                return error_template.into_response();
+            }
+        };
+
         if field.name() == Some("file") {
             let filename = field.file_name().unwrap_or("unknown").to_string();
             let data = match field.bytes().await {
