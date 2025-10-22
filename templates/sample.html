@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Sample Input Spreadsheet - C.A.R.E. Shelter{% endblock %}
+
+{% block extra_style %}
+.sample-section {
+    margin: 30px 0;
+}
+.sample-info {
+    background-color: #e3f2fd;
+    padding: 20px;
+    border-radius: 8px;
+    border-left: 5px solid #2196f3;
+    margin: 20px 0;
+}
+.sheet-section {
+    margin: 40px 0;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+}
+.sheet-section h2 {
+    color: #0066cc;
+    margin-top: 0;
+}
+.data-table {
+    overflow-x: auto;
+    margin: 20px 0;
+}
+.data-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+.data-table th {
+    background-color: #0066cc;
+    color: white;
+    padding: 10px;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    font-weight: bold;
+}
+.data-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #ddd;
+}
+.data-table tr:hover {
+    background-color: #f5f5f5;
+}
+.download-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background-color: #28a745;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+    margin: 20px 0;
+}
+.download-btn:hover {
+    background-color: #218838;
+    text-decoration: none;
+}
+.note {
+    background-color: #fff3cd;
+    padding: 15px;
+    border-radius: 5px;
+    border-left: 4px solid #ffc107;
+    margin: 15px 0;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    .sample-info, .note, .sheet-section {
+        padding: 15px;
+        margin: 15px 0;
+    }
+
+    .download-btn {
+        padding: 10px 20px;
+        font-size: 0.9em;
+        display: block;
+        text-align: center;
+        margin: 10px 0;
+    }
+
+    .data-table {
+        font-size: 0.8em;
+    }
+
+    .data-table th, .data-table td {
+        padding: 6px 8px;
+        white-space: normal;
+        word-wrap: break-word;
+        min-width: 80px;
+    }
+
+    .sheet-section h2 {
+        font-size: 1.2em;
+    }
+
+    .sample-info ol {
+        padding-left: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .data-table {
+        font-size: 0.75em;
+    }
+
+    .data-table th, .data-table td {
+        padding: 5px;
+        min-width: 60px;
+    }
+
+    .download-btn {
+        padding: 8px 15px;
+        font-size: 0.85em;
+    }
+}
+{% endblock %}
+
+{% block content %}
+<h1>Sample Input Spreadsheet</h1>
+
+<div class="sample-info">
+    <p><strong>This page shows example data for each sheet type.</strong> Use this as a reference when preparing your Excel file for upload.</p>
+    <p>Your Excel file should contain one or more sheets with these exact names and column headers.</p>
+</div>
+
+<div class="note">
+    <strong>Important:</strong> All data below is fake/anonymized for demonstration purposes. Sheet names and column headers must match exactly (including capitalization and spacing).
+</div>
+
+{% for sheet in sheets %}
+<div class="sheet-section">
+    <h2>{{ sheet.sheet_name }} Sheet</h2>
+    <p>Sheet name must be: <code>{{ sheet.sheet_name }}</code></p>
+    <div style="margin: 15px 0;">
+        <a href="/sample/download/{{ sheet.sheet_name }}" class="download-btn" style="background-color: #28a745;">
+            Download {{ sheet.sheet_name }} Sample CSV
+        </a>
+    </div>
+    <div class="data-table">
+        <table>
+            <thead>
+                <tr>
+                    {% for header in sheet.headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in sheet.rows %}
+                <tr>
+                    {% for cell in row.cells %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+
+<div class="sample-info" style="margin-top: 40px;">
+    <h3>How to Use This Sample Data</h3>
+    <ol>
+        <li>Create a new Excel file (.xlsx)</li>
+        <li>Create sheets with the exact names shown above (Qgiv, ShelterLuv, Square, Facebook PayPal, DonorSnap)</li>
+        <li>Copy the column headers exactly as shown (including capitalization and spacing)</li>
+        <li>Add your actual donation data to each sheet</li>
+        <li>Save the file and upload it to the tool</li>
+    </ol>
+    <p><strong>Note:</strong> You don't need to include all sheets - only include the sheets that contain data you want to aggregate.</p>
+</div>
+
+<div style="text-align: center; margin: 40px 0;">
+    <a href="/" class="download-btn">← Back to Upload</a>
+    <a href="/mappings" class="download-btn" style="background-color: #0066cc;">View Field Mappings</a>
+</div>
+
+{% endblock %}

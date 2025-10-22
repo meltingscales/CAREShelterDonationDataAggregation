@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}FAQ - C.A.R.E. Shelter{% endblock %}
+
+{% block extra_style %}
+.faq-section {
+    margin: 30px 0;
+}
+.faq-item {
+    margin: 25px 0;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    border-left: 4px solid #0066cc;
+}
+.faq-question {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+}
+.faq-answer {
+    line-height: 1.6;
+    color: #555;
+}
+.back-link {
+    margin-top: 30px;
+}
+{% endblock %}
+
+{% block content %}
+<h1>Frequently Asked Questions</h1>
+
+<div class="faq-section">
+    <div class="faq-item" style="background-color: #e8f8e8; border-left-color: #28a745;">
+        <div class="faq-question">Q: Is my data kept private? Do you store my donation data?</div>
+        <div class="faq-answer">
+            <p><strong>A: No, we do not store any of your data.</strong> Your privacy is our top priority:</p>
+            <ul>
+                <li><strong>Zero Data Retention:</strong> Files are processed in memory and immediately deleted after conversion</li>
+                <li><strong>No Database:</strong> We don't have a database or any storage mechanism</li>
+                <li><strong>Temporary Processing:</strong> Uploaded files are stored in temporary system files that are automatically deleted when processing completes</li>
+                <li><strong>No Logging:</strong> We don't log file contents or donation data</li>
+                <li><strong>Open Source:</strong> You can verify our privacy claims by reviewing the <a href="https://github.com/meltingscales/CAREShelterDonationDataAggregation" target="_blank" rel="noopener noreferrer">source code on GitHub</a></li>
+            </ul>
+            <p><strong>Technical Details:</strong> The application uses Rust's <code>NamedTempFile</code> which automatically deletes temporary files when they go out of scope. Your uploaded file is processed entirely in memory and the CSV is streamed directly to your browser as a download. No traces remain on the server.</p>
+            <p><strong>Recommendation:</strong> For maximum privacy, you can run this tool locally on your own computer. See the <a href="https://github.com/meltingscales/CAREShelterDonationDataAggregation#readme" target="_blank" rel="noopener noreferrer">GitHub repository</a> for instructions.</p>
+        </div>
+    </div>
+
+    <div class="faq-item" style="background-color: #e8f8e8; border-left-color: #28a745;">
+        <div class="faq-question">Q: How secure are the download links? Can someone else access my data?</div>
+        <div class="faq-answer">
+            <p><strong>A: Download links are highly secure and expire very quickly.</strong> Here's how we protect your data:</p>
+            <ul>
+                <li><strong>UUID-Based Security:</strong> Download links use UUIDs (Universally Unique Identifiers), which are 128-bit random values. This makes them cryptographically difficult to guess - there are approximately 3.4×10³⁸ possible combinations.</li>
+                <li><strong>Rapid Expiration:</strong> Download links automatically expire after <strong>{{ download_expiry_seconds }} seconds ({{ download_expiry_seconds / 60 }} minute)</strong> for security. After this time, the data is permanently deleted from memory.</li>
+                <li><strong>One-Time Use:</strong> Each download link can only be used once. After you download your file, the link immediately becomes invalid and the data is deleted.</li>
+                <li><strong>In-Memory Only:</strong> Your processed data is only stored in server memory (RAM), never written to disk, making it impossible to recover after deletion.</li>
+                <li><strong>No Predictable Patterns:</strong> Unlike sequential IDs, UUIDs are randomly generated, so even if someone gets one download link, they cannot predict or derive any other links.</li>
+            </ul>
+            <p><strong>In Practice:</strong> The combination of UUID randomness, {{ download_expiry_seconds }}-second expiration, and one-time use means that the window for unauthorized access is extremely small and practically impossible to exploit.</p>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="faq-question">Q: Some fields from my spreadsheet don't show up in the output CSV. Why?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> Only fields that have been explicitly mapped will appear in the output. If you need additional fields to be included in the aggregated data, please contact <a href="http://henrypost.github.io/" target="_blank">Henry Post</a> to have the mappings added.</p>
+            <p>You can see which fields are currently mapped by visiting the <a href="/mappings">Mappings Page</a>.</p>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="faq-question">Q: What file formats are supported?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> The tool supports Excel files in both .xls (Excel 97-2003) and .xlsx (Excel 2007+) formats.</p>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="faq-question">Q: What sheet names are required in my Excel file?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> Your Excel file should contain sheets with these exact names:</p>
+            <ul>
+                {% for sheet_name in sheet_names %}
+                <li>{{ sheet_name }}</li>
+                {% endfor %}
+            </ul>
+            <p>If a sheet is missing, it will be skipped and the tool will continue processing other sheets.</p>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="faq-question">Q: What happens if the field names in my spreadsheet don't match exactly?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> Field names must match exactly (including capitalization and spacing) for the mapping to work. If a field name doesn't match, that column will be ignored and empty values will be used in the output.</p>
+            <p>Check the <a href="/mappings">Mappings Page</a> to see the exact field names expected for each source.</p>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="faq-question">Q: Can I process just one sheet instead of all of them?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> Currently, the tool processes all available sheets in your Excel file. If you only want data from specific sources, you can create an Excel file containing only those sheets.</p>
+        </div>
+    </div>
+
+    <div class="faq-item">
+        <div class="faq-question">Q: The tool gave me an error. What should I do?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> Common issues include:</p>
+            <ul>
+                <li>Missing or misspelled sheet names</li>
+                <li>Incorrect field names in the headers</li>
+                <li>Corrupted or incompatible Excel file format</li>
+            </ul>
+            <p>Make sure your Excel file follows the expected format. If the problem persists, contact <a href="http://henrypost.github.io/" target="_blank">Henry Post</a> for assistance.</p>
+        </div>
+    </div>
+
+    <div class="faq-item" style="background-color: #e3f2fd; border-left-color: #2196f3;">
+        <div class="faq-question">Q: Why is my data getting cleaned/normalized? (phone numbers and state names)</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> The tool automatically normalizes phone numbers and state names to ensure consistency across all data sources:</p>
+            <ul>
+                <li><strong>Phone Numbers:</strong> All phone numbers are converted to the format XXX-XXX-XXXX (digits only with hyphens). This removes inconsistent formatting like parentheses, dots, spaces, or country codes.</li>
+                <li><strong>State Names:</strong> State names are converted to 2-character uppercase abbreviations (e.g., "California" → "CA", "Illinois" → "IL"). This ensures consistent state codes regardless of how they appear in source data.</li>
+            </ul>
+            <p><strong>Why does this matter?</strong> Normalization helps with:</p>
+            <ul>
+                <li>Accurate deduplication - records with the same phone number but different formatting will be recognized as duplicates</li>
+                <li>Database consistency - DonorSnap expects standardized formats</li>
+                <li>Data quality - easier to search, filter, and report on standardized data</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="faq-item" style="background-color: #e3f2fd; border-left-color: #2196f3;">
+        <div class="faq-question">Q: Why is data not consistent across platforms?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> Different donation platforms (Qgiv, ShelterLuv, Square, etc.) often have different field names, formats, and requirements. For example:</p>
+            <ul>
+                <li>One platform might use "Email" while another uses "Email Address"</li>
+                <li>Phone numbers might be formatted as "(555) 123-4567" or "555.123.4567" or "5551234567"</li>
+                <li>State names might appear as full names ("Illinois") or abbreviations ("IL")</li>
+            </ul>
+            <p>This tool solves these inconsistencies by:</p>
+            <ol>
+                <li><strong>Field Mapping:</strong> Translating different field names to the DonorSnap standard</li>
+                <li><strong>Data Normalization:</strong> Standardizing phone numbers and state names</li>
+                <li><strong>Deduplication:</strong> Merging duplicate records across platforms based on email addresses</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="faq-item" style="background-color: #e3f2fd; border-left-color: #2196f3;">
+        <div class="faq-question">Q: How does deduplication work? What are the priority rules?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> The tool automatically deduplicates records using a smart key system:</p>
+            <ul>
+                <li><strong>Primary key:</strong> Email address (case-insensitive) when present</li>
+                <li><strong>Fallback key:</strong> First Name + Last Name (case-insensitive) when email is blank</li>
+            </ul>
+            <p>This means volunteer records without email addresses can still be deduplicated based on their name.</p>
+            <p>When duplicate records are found, the following priority rules determine which data is kept:</p>
+            <ol>
+                <li><strong>Non-empty values overwrite empty values:</strong> If one record has data in a field and another doesn't, the non-empty value is always kept.</li>
+                <li><strong>Alphabetical sheet priority:</strong> If both records have different non-empty values for the same field, the value from the sheet with a name alphabetically closer to "A" wins. For example:
+                    <ul>
+                        <li>Benevity.org comes before Qgiv</li>
+                        <li>DonorSnap comes before Facebook PayPal</li>
+                        <li>ShelterLuv comes after Square</li>
+                    </ul>
+                </li>
+            </ol>
+            <p><strong>Example:</strong> If john@example.com appears in both the "Qgiv" and "Square" sheets:</p>
+            <ul>
+                <li>If Qgiv has a phone number but Square doesn't → Qgiv's phone number is kept</li>
+                <li>If both have different phone numbers → Qgiv's phone number wins (alphabetically first)</li>
+                <li>The final merged record contains the "best" data from both sources</li>
+            </ul>
+            <p><strong>Deduplication Log:</strong> After processing, you'll see a detailed log showing exactly which records were merged and why. Use CTRL-F (or CMD-F on Mac) to search for specific email addresses in the log.</p>
+        </div>
+    </div>
+
+    <div class="faq-item" style="background-color: #e3f2fd; border-left-color: #2196f3;">
+        <div class="faq-question">Q: Does deduplication matter? Can't I just import all records?</div>
+        <div class="faq-answer">
+            <p><strong>A:</strong> Yes, deduplication is important! Without it, you could end up with:</p>
+            <ul>
+                <li><strong>Duplicate donor records:</strong> The same person appearing multiple times in your database</li>
+                <li><strong>Inflated statistics:</strong> Incorrectly counting the same donor as multiple unique donors</li>
+                <li><strong>Fragmented communication:</strong> Missing the complete picture of a donor's engagement across platforms</li>
+                <li><strong>Data quality issues:</strong> Inconsistent or incomplete information about donors</li>
+            </ul>
+            <p><strong>Benefits of deduplication:</strong></p>
+            <ul>
+                <li>Single, consolidated record per donor</li>
+                <li>Complete history across all platforms</li>
+                <li>Accurate donor counts and reporting</li>
+                <li>Better data for decision-making</li>
+            </ul>
+            <p>The deduplication log helps you understand exactly what changes were made, ensuring transparency in the process.</p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

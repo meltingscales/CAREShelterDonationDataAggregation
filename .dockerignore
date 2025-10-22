@@ -1,0 +1,10 @@
+target/
+.gitignore
+*.md
+docs/
+.claude/
+.ropeproject/
+*.xls
+output.csv
+donorsnap_field_names.json
+*.lock.*

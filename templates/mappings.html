@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block title %}Field Mappings - C.A.R.E. Shelter{% endblock %}
+
+{% block extra_style %}
+.controls {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+}
+.controls label {
+    margin-right: 15px;
+    font-weight: bold;
+}
+.controls select {
+    padding: 5px 10px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+#viz-container {
+    margin: 30px 0;
+    min-height: 600px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: white;
+    position: relative;
+}
+#loading {
+    text-align: center;
+    padding: 50px;
+    color: #666;
+}
+.node rect {
+    cursor: move;
+    fill-opacity: .9;
+    shape-rendering: crispEdges;
+}
+.node text {
+    pointer-events: none;
+    text-shadow: 0 1px 0 #fff;
+    font-size: 12px;
+}
+.link {
+    fill: none;
+    stroke: #000;
+    stroke-opacity: .2;
+}
+.link:hover {
+    stroke-opacity: .5;
+}
+.tooltip {
+    position: absolute;
+    text-align: center;
+    padding: 8px;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.sheet-mapping {
+    margin: 30px 0;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+}
+h3 {
+    color: #0066cc;
+    margin-top: 0;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+th, td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+th {
+    background-color: #0066cc;
+    color: white;
+}
+tr:hover {
+    background-color: #f5f5f5;
+}
+code {
+    background-color: #e8e8e8;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+{% endblock %}
+
+{% block content %}
+<h1>Field Mappings</h1>
+<p>This page shows how fields from each source sheet are mapped to the standardized output format.</p>
+
+<div class="controls">
+    <label for="sheet-select">Select Source Sheet:</label>
+    <select id="sheet-select">
+        <option value="all">All Sheets</option>
+    </select>
+    <button onclick="toggleView()" id="view-toggle" style="margin-left: 20px;">Switch to Table View</button>
+</div>
+
+<div id="viz-container">
+    <div id="loading">Loading visualization...</div>
+    <div id="sankey"></div>
+</div>
+
+<div id="table-view" style="display: none;">
+    <!-- Fallback table view will be populated here -->
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<script>
+let allData = [];
+let currentView = 'sankey';
+
+// Fetch mappings data
+fetch('/api/mappings')
+    .then(response => response.json())
+    .then(data => {
+        allData = data;
+        populateSheetSelect(data);
+        renderVisualization(data);
+        renderTableView(data);
+    })
+    .catch(error => {
+        document.getElementById('loading').innerHTML =
+            '<p style="color: red;">Error loading mappings: ' + error.message + '</p>';
+    });
+
+function populateSheetSelect(data) {
+    const select = document.getElementById('sheet-select');
+    data.forEach(sheet => {
+        const option = document.createElement('option');
+        option.value = sheet.sheet_name;
+        option.textContent = sheet.sheet_name;
+        select.appendChild(option);
+    });
+
+    select.addEventListener('change', (e) => {
+        if (e.target.value === 'all') {
+            renderVisualization(allData);
+        } else {
+            const filtered = allData.filter(s => s.sheet_name === e.target.value);
+            renderVisualization(filtered);
+        }
+    });
+}
+
+function renderVisualization(data) {
+    document.getElementById('loading').style.display = 'none';
+    const container = document.getElementById('sankey');
+    container.innerHTML = '';
+
+    // Build nodes and links for Sankey diagram
+    const nodes = [];
+    const links = [];
+    const nodeMap = new Map();
+
+    let nodeIndex = 0;
+
+    // Create target nodes (right side - DonorSnap fields)
+    const targetFields = new Set();
+    data.forEach(sheet => {
+        sheet.mappings.forEach(mapping => {
+            targetFields.add(mapping.target);
+        });
+    });
+
+    targetFields.forEach(target => {
+        const id = `target_${target}`;
+        if (!nodeMap.has(id)) {
+            nodeMap.set(id, nodeIndex++);
+            nodes.push({ name: target, group: 'target' });
+        }
+    });
+
+    // Create source nodes and links for each sheet
+    data.forEach(sheet => {
+        sheet.mappings.forEach(mapping => {
+            const sourceId = `${sheet.sheet_name}_${mapping.source}`;
+            const targetId = `target_${mapping.target}`;
+
+            if (!nodeMap.has(sourceId)) {
+                nodeMap.set(sourceId, nodeIndex++);
+                nodes.push({
+                    name: `${sheet.sheet_name}: ${mapping.source}`,
+                    group: sheet.sheet_name
+                });
+            }
+
+            links.push({
+                source: nodeMap.get(sourceId),
+                target: nodeMap.get(targetId),
+                value: 1,
+                description: mapping.description
+            });
+        });
+    });
+
+    // Set up SVG
+    const width = container.clientWidth || 800;
+    const height = Math.max(600, nodes.length * 20);
+
+    const svg = d3.select('#sankey')
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+    // Create Sankey generator
+    const sankey = d3.sankey()
+        .nodeWidth(15)
+        .nodePadding(10)
+        .extent([[1, 1], [width - 1, height - 5]]);
+
+    const { nodes: sankeyNodes, links: sankeyLinks } = sankey({
+        nodes: nodes.map(d => Object.assign({}, d)),
+        links: links.map(d => Object.assign({}, d))
+    });
+
+    // Color scale
+    const color = d3.scaleOrdinal()
+        .domain(['target', 'DonorSnap', 'Qgiv', 'ShelterLuv', 'Square', 'Facebook PayPal'])
+        .range(['#0066cc', '#28a745', '#ffc107', '#dc3545', '#17a2b8', '#6610f2']);
+
+    // Add links
+    svg.append('g')
+        .selectAll('path')
+        .data(sankeyLinks)
+        .join('path')
+        .attr('class', 'link')
+        .attr('d', d3.sankeyLinkHorizontal())
+        .attr('stroke-width', d => Math.max(1, d.width))
+        .style('stroke', d => color(d.source.group))
+        .append('title')
+        .text(d => `${d.source.name} → ${d.target.name}\n${d.description || ''}`);
+
+    // Add nodes
+    const node = svg.append('g')
+        .selectAll('g')
+        .data(sankeyNodes)
+        .join('g');
+
+    node.append('rect')
+        .attr('x', d => d.x0)
+        .attr('y', d => d.y0)
+        .attr('height', d => d.y1 - d.y0)
+        .attr('width', d => d.x1 - d.x0)
+        .attr('fill', d => color(d.group))
+        .append('title')
+        .text(d => `${d.name}`);
+
+    node.append('text')
+        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+        .attr('y', d => (d.y1 + d.y0) / 2)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+        .text(d => d.name);
+}
+
+function renderTableView(data) {
+    const tableView = document.getElementById('table-view');
+    let html = '';
+
+    data.forEach(sheet => {
+        html += `
+            <div class="sheet-mapping">
+                <h3>${sheet.sheet_name}</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Source Field</th>
+                            <th>→</th>
+                            <th>Target Field</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        sheet.mappings.forEach(mapping => {
+            html += `
+                        <tr>
+                            <td><code>${mapping.source}</code></td>
+                            <td>→</td>
+                            <td><code>${mapping.target}</code></td>
+                            <td>${mapping.description}</td>
+                        </tr>`;
+        });
+
+        html += `
+                    </tbody>
+                </table>
+            </div>`;
+    });
+
+    tableView.innerHTML = html;
+}
+
+function toggleView() {
+    const vizContainer = document.getElementById('viz-container');
+    const tableView = document.getElementById('table-view');
+    const button = document.getElementById('view-toggle');
+
+    if (currentView === 'sankey') {
+        vizContainer.style.display = 'none';
+        tableView.style.display = 'block';
+        button.textContent = 'Switch to Sankey Diagram';
+        currentView = 'table';
+    } else {
+        vizContainer.style.display = 'block';
+        tableView.style.display = 'none';
+        button.textContent = 'Switch to Table View';
+        currentView = 'sankey';
+    }
+}
+
+// Responsive resize
+window.addEventListener('resize', () => {
+    if (currentView === 'sankey') {
+        renderVisualization(allData);
+    }
+});
+</script>
+{% endblock %}

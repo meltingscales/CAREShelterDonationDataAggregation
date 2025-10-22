@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Error - C.A.R.E. Shelter{% endblock %}
+
+{% block extra_style %}
+.error-container {
+    max-width: 800px;
+    margin: 20px auto;
+}
+.error-box {
+    background-color: #ffebee;
+    padding: 30px;
+    border-radius: 8px;
+    border-left: 5px solid #c62828;
+    margin-bottom: 20px;
+}
+.error-box h1 {
+    color: #c62828;
+    margin-top: 0;
+}
+.error-message {
+    background-color: white;
+    padding: 15px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    color: #333;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 15px 0;
+}
+.suggestions {
+    background-color: #fff3e0;
+    padding: 20px;
+    border-radius: 8px;
+    border-left: 5px solid #f57c00;
+}
+.suggestions h2 {
+    color: #f57c00;
+    margin-top: 0;
+}
+.suggestions ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+.suggestions li {
+    margin: 8px 0;
+}
+.action-buttons {
+    margin-top: 20px;
+    text-align: center;
+}
+.btn {
+    display: inline-block;
+    padding: 12px 24px;
+    margin: 0 10px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: bold;
+}
+.btn-primary {
+    background-color: #0066cc;
+    color: white;
+}
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+.btn:hover {
+    opacity: 0.9;
+}
+{% endblock %}
+
+{% block content %}
+<div class="error-container">
+    <div class="error-box">
+        <h1>❌ Error Processing File</h1>
+        <p>We encountered a problem while processing your donation data file.</p>
+
+        <h3>Error Details:</h3>
+        <div class="error-message">{{ error_message }}</div>
+    </div>
+
+    <div class="suggestions">
+        <h2>💡 Troubleshooting Suggestions</h2>
+        <ul>
+            <li><strong>Check your sheet names:</strong> Make sure your Excel file contains sheets named exactly as listed on the <a href="/">home page</a> (DonorSnap, Qgiv, ShelterLuv, Square, or Facebook PayPal).</li>
+            <li><strong>Verify column headers:</strong> Each sheet must have the correct column headers. See the <a href="/mappings">mappings page</a> for the expected field names.</li>
+            <li><strong>File format:</strong> Ensure you're uploading a valid Excel file (.xlsx or .xls format).</li>
+            <li><strong>File size:</strong> Very large files may cause processing issues. Try splitting your data into smaller files.</li>
+            <li><strong>Data format:</strong> Check for any unusual characters or formatting in your data that might cause parsing issues.</li>
+        </ul>
+
+        <p><strong>Still having issues?</strong> Contact <a href="http://henrypost.github.io/" target="_blank">Henry Post</a> for assistance, or check the <a href="/faq">FAQ page</a> for more information.</p>
+    </div>
+
+    <div class="action-buttons">
+        <a href="/" class="btn btn-primary">← Try Again</a>
+        <a href="/mappings" class="btn btn-secondary">View Field Mappings</a>
+        <a href="/faq" class="btn btn-secondary">View FAQ</a>
+    </div>
+</div>
+{% endblock %}

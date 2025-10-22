@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}About - C.A.R.E. Shelter{% endblock %}
+
+{% block extra_style %}
+.content {
+    line-height: 1.8;
+}
+.content h2 {
+    color: #0066cc;
+    margin-top: 30px;
+}
+.content ul {
+    margin: 15px 0;
+}
+.content li {
+    margin: 10px 0;
+}
+.highlight-box {
+    background-color: #e8f4f8;
+    padding: 20px;
+    border-radius: 5px;
+    margin: 20px 0;
+}
+.back-link {
+    margin-top: 30px;
+}
+{% endblock %}
+
+{% block content %}
+<h1>About This Tool</h1>
+
+<div class="content">
+    <div class="highlight-box">
+        <h2>What is this?</h2>
+        <p>C.A.R.E. Shelter receives donations through multiple platforms (Qgiv, PayPal, Square, ShelterLuv, and manual entries). Each platform exports data with different field names and formats, making it difficult to import all donations into DonorSnap for centralized donor management.</p>
+    </div>
+
+    <h2>The Problem</h2>
+    <p>Managing donation data from multiple sources is challenging:</p>
+    <ul>
+        <li><strong>Qgiv</strong> uses field names like "First Name", "Last Name", "Email"</li>
+        <li><strong>ShelterLuv</strong> uses "Person First Name", "Person Last Name", "Person Primary Email"</li>
+        <li><strong>Square</strong> uses "First Name", "Last Name", "Email Address"</li>
+        <li><strong>Facebook PayPal</strong> only has "From Email Address" for contact info</li>
+        <li><strong>DonorSnap</strong> expects its own specific field names like "First", "Last", "EMail"</li>
+    </ul>
+    <p>Without automation, someone has to manually rename columns and reformat data from each source before importing into DonorSnap - a time-consuming and error-prone process.</p>
+
+    <h2>The Solution</h2>
+    <p>This tool automates the entire process:</p>
+    <ul>
+        <li><strong>Accept</strong> a single Excel file containing sheets from different donation sources</li>
+        <li><strong>Map</strong> each source's fields to DonorSnap's expected field names automatically</li>
+        <li><strong>Combine</strong> all donation records into one standardized CSV file</li>
+        <li><strong>Simplify</strong> the import process into DonorSnap's Excel Import feature</li>
+    </ul>
+
+    <h2>How It Works</h2>
+    <ol>
+        <li>Export donation data from each platform (Qgiv, Square, ShelterLuv, etc.)</li>
+        <li>Combine all exports into a single Excel file with separate sheets for each source</li>
+        <li>Upload the Excel file to this web application</li>
+        <li>Download the standardized CSV file ready for DonorSnap import</li>
+    </ol>
+
+    <h2>Benefits</h2>
+    <ul>
+        <li><strong>Save Time</strong>: No more manual field renaming and data reformatting</li>
+        <li><strong>Reduce Errors</strong>: Automated mapping ensures consistency</li>
+        <li><strong>Centralize Data</strong>: All donor information in one place for better management</li>
+        <li><strong>Transparency</strong>: View exactly how fields are mapped on the <a href="/mappings">Mappings page</a></li>
+    </ul>
+
+    <h2>Supported Platforms</h2>
+    <ul>
+        <li>DonorSnap (existing data)</li>
+        <li>Qgiv</li>
+        <li>ShelterLuv</li>
+        <li>Square</li>
+        <li>Facebook PayPal</li>
+    </ul>
+
+    <div class="highlight-box">
+        <p><strong>Result:</strong> Instead of manually reformatting data from each platform, you can now upload one consolidated spreadsheet and get back a DonorSnap-ready CSV file with consistent field names for donor information (name, email, address), donation details (amount, date, payment method), and notes.</p>
+    </div>
+
+    <h2>Privacy & Data Security</h2>
+    <div class="highlight-box" style="background-color: #e8f8e8; border-left: 4px solid #28a745;">
+        <p><strong>Your data is not stored or retained.</strong></p>
+        <p>This tool processes your files in real-time and immediately discards them:</p>
+        <ul>
+            <li>Files are uploaded to temporary memory and automatically deleted after processing</li>
+            <li>No database exists to store donation data</li>
+            <li>The CSV output is streamed directly to your browser</li>
+            <li>No logs are kept of file contents or donor information</li>
+        </ul>
+        <p><strong>Open Source:</strong> This project is fully open source. You can review the code, verify our privacy claims, and even run the tool on your own computer for complete control.</p>
+        <p><a href="https://github.com/meltingscales/CAREShelterDonationDataAggregation" target="_blank" rel="noopener noreferrer">View source code on GitHub →</a></p>
+    </div>
+
+    <h2>Technical Implementation</h2>
+    <p>This tool is built with:</p>
+    <ul>
+        <li><strong>Rust:</strong> Fast, secure, and memory-safe programming language</li>
+        <li><strong>Axum:</strong> Modern web framework for efficient request handling</li>
+        <li><strong>Data-Driven Mappings:</strong> All field mappings are defined in code and displayed transparently</li>
+        <li><strong>Temporary File Handling:</strong> Uses <code>NamedTempFile</code> for automatic cleanup</li>
+    </ul>
+
+    <h2>Version Information</h2>
+    <div class="highlight-box" style="background-color: #f9f9f9;">
+        <ul style="list-style: none; padding-left: 0;">
+            <li><strong>Git Commit:</strong> <code>{{ git_hash }}</code></li>
+            <li><strong>Git Branch:</strong> <code>{{ git_branch }}</code></li>
+            <li><strong>Build Date:</strong> <code>{{ git_date }}</code></li>
+        </ul>
+        <p style="margin-top: 15px; font-size: 0.9em;">
+            <a href="https://github.com/meltingscales/CAREShelterDonationDataAggregation/commit/{{ git_hash }}" target="_blank" rel="noopener noreferrer">View this commit on GitHub →</a>
+        </p>
+    </div>
+</div>
+
+<div class="back-link">
+    <a href="/">← Back to Home</a> |
+    <a href="https://github.com/meltingscales/CAREShelterDonationDataAggregation" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+</div>
+{% endblock %}
