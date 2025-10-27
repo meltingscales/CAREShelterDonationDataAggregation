@@ -353,6 +353,40 @@ pub fn get_all_sheet_mappings() -> Vec<SheetMapping> {
                 // These could be added as custom fields in the future if needed
             ],
         },
+        // Check donations mappings
+        SheetMapping {
+            sheet_name: "Check",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("Address1", "Address"),
+                ("City", "City"),
+                ("State/Province", "State"),
+                ("Zip/Postal Code", "Zip"),
+                ("EMail", "Email"),
+                ("Donation Date", "Date"),
+                ("Amount", "Amount"),
+                ("Payment Method", "Payment Method"),
+                ("DonationNote", "Notes"),
+            ],
+        },
+        // Cash donations mappings
+        SheetMapping {
+            sheet_name: "Cash",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("Address1", "Address"),
+                ("City", "City"),
+                ("State/Province", "State"),
+                ("Zip/Postal Code", "Zip"),
+                ("EMail", "Email"),
+                ("Donation Date", "Date"),
+                ("Amount", "Amount"),
+                ("Payment Method", "Payment Method"),
+                ("DonationNote", "Notes"),
+            ],
+        },
     ]
 }
 
