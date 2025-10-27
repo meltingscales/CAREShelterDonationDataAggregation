@@ -108,6 +108,7 @@ pub const DONORSNAP_FIELDS_WE_CARE_ABOUT: &[&str] = &[
     "Donation Type",
     "Payment Method",
     "DonationNote",
+    "Appeal",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -201,6 +202,10 @@ pub fn get_field_descriptions() -> Vec<FieldDescription> {
         FieldDescription {
             target_field: "DonationNote",
             description: "Notes about the donation",
+        },
+        FieldDescription {
+            target_field: "Appeal",
+            description: "Appeal or campaign designation",
         },
     ]
 }
