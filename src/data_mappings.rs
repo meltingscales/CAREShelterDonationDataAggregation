@@ -373,6 +373,7 @@ pub fn get_all_sheet_mappings() -> Vec<SheetMapping> {
                 ("Amount", "Amount"),
                 ("Payment Method", "Payment Method"),
                 ("DonationNote", "Notes"),
+                ("Appeal", "Appeal"),
             ],
         },
         // Cash donations mappings
@@ -390,6 +391,7 @@ pub fn get_all_sheet_mappings() -> Vec<SheetMapping> {
                 ("Amount", "Amount"),
                 ("Payment Method", "Payment Method"),
                 ("DonationNote", "Notes"),
+                ("Appeal", "Appeal"),
             ],
         },
     ]
