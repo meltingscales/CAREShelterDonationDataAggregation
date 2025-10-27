@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 use csv::StringRecord;
+use crate::data_mappings::has_higher_priority;
 
 /// Represents the result of a deduplication operation
 pub struct DeduplicationResult {
@@ -39,7 +40,7 @@ pub struct DeduplicationResult {
 ///
 /// Priority rules:
 /// 1. Non-empty values overwrite empty values
-/// 2. If both non-empty, values with source sheet names alphabetically closer to "A" win
+/// 2. If both non-empty, values from higher priority sheets win (see DEDUPLICATION_PRIORITY in data_mappings.rs)
 ///
 /// # Arguments
 /// * `headers` - CSV headers
@@ -142,11 +143,11 @@ pub fn deduplicate_records(
 
             // Store the "loser" in removed duplicates before merging
             // The record that gets discarded is the one from the lower-priority sheet
-            if source_sheet_name < existing_sheet {
-                // New record wins, existing record is removed
+            if has_higher_priority(source_sheet_name, existing_sheet) {
+                // New record has higher priority, existing record is removed
                 removed_duplicates.push((existing_record.clone(), existing_sheet.clone()));
             } else {
-                // Existing record wins, new record is removed
+                // Existing record has higher priority, new record is removed
                 removed_duplicates.push((record.clone(), source_sheet_name.to_string()));
             }
 
@@ -160,8 +161,8 @@ pub fn deduplicate_records(
                 &mut log,
             );
 
-            // Determine which sheet name to keep
-            let merged_sheet = if source_sheet_name < existing_sheet {
+            // Determine which sheet name to keep (higher priority sheet)
+            let merged_sheet = if has_higher_priority(source_sheet_name, existing_sheet) {
                 source_sheet_name.to_string()
             } else {
                 existing_sheet.clone()
@@ -216,7 +217,7 @@ pub fn deduplicate_records(
 
 /// Merges two records according to priority rules:
 /// 1. Non-empty values overwrite empty values
-/// 2. If both non-empty, values from sheets alphabetically closer to "A" win
+/// 2. If both non-empty, values from higher priority sheets win (see DEDUPLICATION_PRIORITY)
 fn merge_records(
     headers: &StringRecord,
     existing: &StringRecord,
@@ -243,10 +244,10 @@ fn merge_records(
             // Rule 1: Keep non-empty existing value
             existing_val
         } else if existing_val != new_val && !existing_val.is_empty() && !new_val.is_empty() {
-            // Rule 2: Both non-empty and different - use alphabetical priority
-            if new_sheet < existing_sheet {
+            // Rule 2: Both non-empty and different - use priority-based comparison
+            if has_higher_priority(new_sheet, existing_sheet) {
                 log.push_str(&format!(
-                    "  Field {}: Using new value '{}' (sheet '{}' < '{}')\n",
+                    "  Field {}: Using new value '{}' (sheet '{}' has higher priority than '{}')\n",
                     headers.get(idx).unwrap_or("?"),
                     new_val,
                     new_sheet,
@@ -255,7 +256,7 @@ fn merge_records(
                 new_val
             } else {
                 log.push_str(&format!(
-                    "  Field {}: Keeping existing value '{}' (sheet '{}' >= '{}')\n",
+                    "  Field {}: Keeping existing value '{}' (sheet '{}' has higher priority than '{}')\n",
                     headers.get(idx).unwrap_or("?"),
                     existing_val,
                     existing_sheet,
@@ -381,11 +382,11 @@ pub fn deduplicate_multi_sheet(
                 log.push_str(&format!("  Previously seen in sheet '{}'\n", existing_sheet));
 
                 // Store the "loser" in removed duplicates before merging
-                if sheet_name < *existing_sheet {
-                    // New record wins, existing record is removed
+                if has_higher_priority(&sheet_name, existing_sheet) {
+                    // New record has higher priority, existing record is removed
                     removed_duplicates.push((existing_record.clone(), existing_sheet.clone()));
                 } else {
-                    // Existing record wins, new record is removed
+                    // Existing record has higher priority, new record is removed
                     removed_duplicates.push((record.clone(), sheet_name.clone()));
                 }
 
@@ -399,8 +400,8 @@ pub fn deduplicate_multi_sheet(
                     &mut log,
                 );
 
-                // Determine which sheet name to keep (alphabetically first)
-                let merged_sheet = if sheet_name < *existing_sheet {
+                // Determine which sheet name to keep (higher priority sheet)
+                let merged_sheet = if has_higher_priority(&sheet_name, existing_sheet) {
                     sheet_name.clone()
                 } else {
                     existing_sheet.clone()
@@ -482,17 +483,17 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_priority_alphabetical() {
+    fn test_merge_priority_based() {
         let headers = StringRecord::from(vec!["First", "Last"]);
         let existing = StringRecord::from(vec!["John", "Doe"]);
         let new = StringRecord::from(vec!["John", "Smith"]);
         let mut log = String::new();
 
-        // Sheet A comes before Sheet B alphabetically
-        let merged = merge_records(&headers, &existing, &new, "SheetB", "SheetA", &mut log);
+        // Check has higher priority than Cash according to DEDUPLICATION_PRIORITY
+        let merged = merge_records(&headers, &existing, &new, "Cash", "Check", &mut log);
 
         assert_eq!(merged.get(0).unwrap(), "John");
-        assert_eq!(merged.get(1).unwrap(), "Smith"); // SheetA wins
+        assert_eq!(merged.get(1).unwrap(), "Smith"); // Check (new) wins over Cash (existing)
     }
 
     #[test]

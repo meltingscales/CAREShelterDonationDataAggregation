@@ -89,6 +89,35 @@ const FAKE_NOTES: &[&str] = &[
     "Memorial donation",
 ];
 
+/// Priority order for deduplication - lower index = higher priority
+/// When duplicate records are found, data from higher priority sheets wins
+pub const DEDUPLICATION_PRIORITY: &[&str] = &[
+    "Check",
+    "Cash",
+    "CARE Volunteer List",
+    "Qgiv",
+    "ShelterLuv",
+    "DonorSnap",
+    "Facebook PayPal",
+    "Benevity.org",
+    "Square",
+];
+
+/// Returns the priority index of a sheet name (lower = higher priority)
+/// Sheets not in the priority list get the lowest priority (highest index)
+pub fn get_sheet_priority(sheet_name: &str) -> usize {
+    DEDUPLICATION_PRIORITY
+        .iter()
+        .position(|&s| s == sheet_name)
+        .unwrap_or(usize::MAX)
+}
+
+/// Compares two sheet names by priority
+/// Returns true if sheet_a has higher priority (should win) than sheet_b
+pub fn has_higher_priority(sheet_a: &str, sheet_b: &str) -> bool {
+    get_sheet_priority(sheet_a) < get_sheet_priority(sheet_b)
+}
+
 pub const DONORSNAP_FIELDS_WE_CARE_ABOUT: &[&str] = &[
     "First",
     "Last",

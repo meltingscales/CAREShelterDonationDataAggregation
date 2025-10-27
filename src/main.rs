@@ -28,6 +28,7 @@ use calamine::{open_workbook_auto, Data, Reader};
 use care_shelter_donation_aggregation::{
     get_all_sheet_mappings, get_field_descriptions, DONORSNAP_FIELDS_WE_CARE_ABOUT,
     normalize_phone, normalize_state, deduplicate_multi_sheet, FieldDescription,
+    DEDUPLICATION_PRIORITY,
 };
 use csv::{Writer, StringRecord};
 use std::collections::HashMap;
@@ -174,6 +175,7 @@ struct OrphanMappingsTemplate {}
         version_api,
         health_api,
         fields_api,
+        deduplication_priority_api,
         sheets_api,
         sample_api,
     ),
@@ -188,6 +190,7 @@ struct OrphanMappingsTemplate {}
             VersionInfo,
             HealthResponse,
             FieldDescription,
+            DeduplicationPriorityResponse,
             SheetsResponse,
             SampleSheetData,
         )
@@ -308,6 +311,7 @@ async fn main() {
         .route("/api/version", get(version_api))
         .route("/api/health", get(health_api))
         .route("/api/fields", get(fields_api))
+        .route("/api/deduplication-priority", get(deduplication_priority_api))
         .route("/api/sheets", get(sheets_api))
         .route("/api/sample/:sheet_name", get(sample_api))
         .merge(SwaggerUi::new("/openapi").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -692,6 +696,29 @@ async fn health_api() -> Json<HealthResponse> {
 )]
 async fn fields_api() -> Json<Vec<FieldDescription>> {
     Json(get_field_descriptions())
+}
+
+#[derive(Serialize, ToSchema)]
+struct DeduplicationPriorityResponse {
+    /// Ordered list of sheet names by priority (index 0 = highest priority)
+    priority_order: Vec<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/deduplication-priority",
+    tag = "Reference",
+    responses(
+        (status = 200, description = "Deduplication priority order (lower index = higher priority)", body = DeduplicationPriorityResponse)
+    )
+)]
+async fn deduplication_priority_api() -> Json<DeduplicationPriorityResponse> {
+    let priority_order: Vec<String> = DEDUPLICATION_PRIORITY
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    Json(DeduplicationPriorityResponse { priority_order })
 }
 
 #[utoipa::path(

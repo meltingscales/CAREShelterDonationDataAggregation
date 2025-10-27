@@ -21,6 +21,7 @@ pub mod deduplication;
 
 pub use data_mappings::{
     DONORSNAP_FIELDS_WE_CARE_ABOUT,
+    DEDUPLICATION_PRIORITY,
     FieldDescription,
     SheetMapping,
     SampleRow,

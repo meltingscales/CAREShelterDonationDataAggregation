@@ -141,20 +141,56 @@
             <p>When duplicate records are found, the following priority rules determine which data is kept:</p>
             <ol>
                 <li><strong>Non-empty values overwrite empty values:</strong> If one record has data in a field and another doesn't, the non-empty value is always kept.</li>
-                <li><strong>Alphabetical sheet priority:</strong> If both records have different non-empty values for the same field, the value from the sheet with a name alphabetically closer to "A" wins. For example:
-                    <ul>
-                        <li>Benevity.org comes before Qgiv</li>
-                        <li>DonorSnap comes before Facebook PayPal</li>
-                        <li>ShelterLuv comes after Square</li>
-                    </ul>
+                <li><strong>Sheet priority order:</strong> If both records have different non-empty values for the same field, the value from the sheet with higher priority wins. Priority is determined by this fixed order (highest to lowest):
+                    <ol id="deduplication-priority-list">
+                        <li>Loading...</li>
+                    </ol>
                 </li>
             </ol>
-            <p><strong>Example:</strong> If john@example.com appears in both the "Qgiv" and "Square" sheets:</p>
-            <ul>
-                <li>If Qgiv has a phone number but Square doesn't → Qgiv's phone number is kept</li>
-                <li>If both have different phone numbers → Qgiv's phone number wins (alphabetically first)</li>
+            <p id="deduplication-example" style="display: none;">
+                <strong>Example:</strong> If john@example.com appears in both the <span id="example-sheet1"></span> and <span id="example-sheet2"></span> sheets:
+            </p>
+            <ul id="deduplication-example-details" style="display: none;">
+                <li>If <span id="example-sheet1-copy1"></span> has a phone number but <span id="example-sheet2-copy1"></span> doesn't → <span id="example-sheet1-copy2"></span>'s phone number is kept</li>
+                <li>If both have different phone numbers → <span id="example-sheet1-copy3"></span>'s phone number wins (higher priority)</li>
                 <li>The final merged record contains the "best" data from both sources</li>
             </ul>
+
+            <script>
+                // Fetch and display the deduplication priority list
+                fetch('/api/deduplication-priority')
+                    .then(response => response.json())
+                    .then(data => {
+                        const list = document.getElementById('deduplication-priority-list');
+                        list.innerHTML = '';
+                        data.priority_order.forEach((sheetName, index) => {
+                            const li = document.createElement('li');
+                            li.textContent = sheetName;
+                            list.appendChild(li);
+                        });
+
+                        // Update example with actual sheet names from the priority list
+                        if (data.priority_order.length >= 2) {
+                            const sheet1 = data.priority_order[0]; // Highest priority
+                            const sheet2 = data.priority_order[data.priority_order.length - 1]; // Lowest priority
+
+                            document.getElementById('example-sheet1').textContent = `"${sheet1}"`;
+                            document.getElementById('example-sheet2').textContent = `"${sheet2}"`;
+                            document.getElementById('example-sheet1-copy1').textContent = sheet1;
+                            document.getElementById('example-sheet2-copy1').textContent = sheet2;
+                            document.getElementById('example-sheet1-copy2').textContent = sheet1;
+                            document.getElementById('example-sheet1-copy3').textContent = sheet1;
+
+                            document.getElementById('deduplication-example').style.display = 'block';
+                            document.getElementById('deduplication-example-details').style.display = 'block';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching deduplication priority:', error);
+                        const list = document.getElementById('deduplication-priority-list');
+                        list.innerHTML = '<li>Error loading priority list. Please refresh the page.</li>';
+                    });
+            </script>
             <p><strong>Deduplication Log:</strong> After processing, you'll see a detailed log showing exactly which records were merged and why. Use CTRL-F (or CMD-F on Mac) to search for specific email addresses in the log.</p>
         </div>
     </div>
