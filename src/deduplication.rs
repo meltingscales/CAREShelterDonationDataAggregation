@@ -21,8 +21,8 @@ use csv::StringRecord;
 
 /// Represents the result of a deduplication operation
 pub struct DeduplicationResult {
-    /// The deduplicated records
-    pub records: Vec<StringRecord>,
+    /// The deduplicated records with their source sheet names
+    pub records: Vec<(StringRecord, String)>,
     /// Verbose log of all deduplication operations
     pub log: String,
     /// Any errors encountered during deduplication
@@ -64,8 +64,13 @@ pub fn deduplicate_records(
     if email_idx.is_none() {
         errors.push("No 'EMail' column found in headers".to_string());
         let records_count = records.len();
+        // Convert records to include source sheet
+        let records_with_source: Vec<(StringRecord, String)> = records
+            .into_iter()
+            .map(|r| (r, source_sheet_name.to_string()))
+            .collect();
         return DeduplicationResult {
-            records,
+            records: records_with_source,
             log,
             errors,
             records_before_dedup: records_count,
@@ -193,8 +198,8 @@ pub fn deduplicate_records(
         records.len() - email_map.len()
     ));
 
-    // Convert the HashMap back to a Vec
-    let deduplicated: Vec<StringRecord> = email_map.into_values().map(|(record, _)| record).collect();
+    // Convert the HashMap back to a Vec, keeping the source sheet names
+    let deduplicated: Vec<(StringRecord, String)> = email_map.into_values().collect();
 
     let records_before = records.len();
     let duplicates = records_before - deduplicated.len();
@@ -289,10 +294,12 @@ pub fn deduplicate_multi_sheet(
     if email_idx.is_none() {
         errors.push("No 'EMail' column found in headers".to_string());
 
-        // Flatten all records and return them as-is
-        let all_records: Vec<StringRecord> = sheet_records
+        // Flatten all records and return them as-is with source sheet names
+        let all_records: Vec<(StringRecord, String)> = sheet_records
             .into_iter()
-            .flat_map(|(_, records)| records)
+            .flat_map(|(sheet_name, records)| {
+                records.into_iter().map(move |r| (r, sheet_name.clone()))
+            })
             .collect();
 
         let records_count = all_records.len();
@@ -423,10 +430,9 @@ pub fn deduplicate_multi_sheet(
         log.push_str(&format!("Records with errors: {}\n", errors.len()));
     }
 
-    // Convert the HashMap back to a Vec
-    let deduplicated: Vec<StringRecord> = email_map
+    // Convert the HashMap back to a Vec, keeping the source sheet names
+    let deduplicated: Vec<(StringRecord, String)> = email_map
         .into_values()
-        .map(|(record, _)| record)
         .collect();
 
     let duplicates = total_records_before - deduplicated.len();

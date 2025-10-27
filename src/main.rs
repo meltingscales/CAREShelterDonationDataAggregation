@@ -1236,17 +1236,21 @@ fn process_spreadsheet(file_path: &str, filename: &str) -> Result<ProcessResult,
     {
         let mut wtr = Writer::from_writer(&mut csv_output);
 
-        // Write header
-        if let Err(e) = wtr.write_record(DONORSNAP_FIELDS_WE_CARE_ABOUT) {
+        // Write header with SourceSheet column
+        let mut headers: Vec<&str> = DONORSNAP_FIELDS_WE_CARE_ABOUT.to_vec();
+        headers.push("SourceSheet");
+        if let Err(e) = wtr.write_record(&headers) {
             return Err(format!(
                 "Internal error writing CSV header: {}\n\nPlease try again or contact support.",
                 e
             ));
         }
 
-        // Write deduplicated records
-        for record in &dedup_result.records {
-            if let Err(e) = wtr.write_record(record) {
+        // Write deduplicated records with their source sheet
+        for (record, sheet_name) in &dedup_result.records {
+            let mut row: Vec<String> = record.iter().map(|s| s.to_string()).collect();
+            row.push(sheet_name.clone());
+            if let Err(e) = wtr.write_record(&row) {
                 return Err(format!(
                     "Failed to write record to CSV: {}\n\nPlease try again or contact support.",
                     e
