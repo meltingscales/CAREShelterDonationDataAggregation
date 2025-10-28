@@ -11,13 +11,13 @@
     <strong>What are orphan fields?</strong> Orphan fields are DonorSnap target fields that have no mapping from a particular source sheet. When processing data from that sheet, these fields will be left empty in the output.
 </div>
 
-<div id="loading" style="text-align: center; padding: 50px; color: #666;">Loading orphan mappings...</div>
+<div id="loading" class="loading-message">Loading orphan mappings...</div>
 
-<div id="stats-container" style="display: none;">
+<div id="stats-container" class="hidden">
     <div class="stats" id="stats"></div>
 </div>
 
-<div id="mappings-container" style="display: none;"></div>
+<div id="mappings-container" class="hidden"></div>
 
 <script>
 // Fetch orphan mappings data
@@ -32,7 +32,7 @@ fetch('/api/orphan-mappings')
     })
     .catch(error => {
         document.getElementById('loading').innerHTML =
-            '<p style="color: red;">Error loading orphan mappings: ' + error.message + '</p>';
+            '<p class="error-message-text">Error loading orphan mappings: ' + error.message + '</p>';
     });
 
 function renderStats(data) {
@@ -98,7 +98,7 @@ function renderOrphanMappings(data) {
                     </tbody>
                 </table>`;
         } else {
-            html += `<p style="color: #28a745; font-weight: bold;">All DonorSnap fields are mapped! No orphan fields.</p>`;
+            html += `<p class="complete-message">All DonorSnap fields are mapped! No orphan fields.</p>`;
         }
 
         html += `</div>`;

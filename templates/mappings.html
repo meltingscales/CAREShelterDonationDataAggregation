@@ -12,7 +12,7 @@
     <select id="sheet-select">
         <option value="all">All Sheets</option>
     </select>
-    <button onclick="toggleView()" id="view-toggle" style="margin-left: 20px;">Switch to Table View</button>
+    <button onclick="toggleView()" id="view-toggle" class="view-toggle-btn">Switch to Table View</button>
 </div>
 
 <div id="viz-container">
@@ -20,7 +20,7 @@
     <div id="sankey"></div>
 </div>
 
-<div id="table-view" style="display: none;">
+<div id="table-view" class="hidden">
     <!-- Fallback table view will be populated here -->
 </div>
 
@@ -41,7 +41,7 @@ fetch('/api/mappings')
     })
     .catch(error => {
         document.getElementById('loading').innerHTML =
-            '<p style="color: red;">Error loading mappings: ' + error.message + '</p>';
+            '<p class="error-message-text">Error loading mappings: ' + error.message + '</p>';
     });
 
 function populateSheetSelect(data) {
@@ -171,6 +171,7 @@ function renderVisualization(data) {
         .attr('y', d => (d.y1 + d.y0) / 2)
         .attr('dy', '0.35em')
         .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+        .attr('fill', getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim())
         .text(d => d.name);
 }
 

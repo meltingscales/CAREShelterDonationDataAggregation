@@ -37,18 +37,18 @@
         </a>
 
         {% if has_duplicates %}
-        <a href="/download-duplicates/{{ session_id }}" class="download-button" download="removed_duplicates.csv" style="background-color: #6c757d; margin-top: 10px;">
+        <a href="/download-duplicates/{{ session_id }}" class="download-button download-button-secondary" download="removed_duplicates.csv">
             Download Removed Duplicates CSV
         </a>
         {% endif %}
 
         {% if !deduplication_log.is_empty() %}
-        <a href="/download-log/{{ session_id }}" class="download-button" download="deduplication_log.txt" style="background-color: #17a2b8; margin-top: 10px;">
+        <a href="/download-log/{{ session_id }}" class="download-button download-button-info" download="deduplication_log.txt">
             Download Deduplication Log (.txt)
         </a>
         {% endif %}
 
-        <p style="margin-top: 15px; color: #666; font-size: 0.9em;">
+        <p class="expiry-note">
             ⚠️ <strong>Important:</strong> Download links expire in 1 minute and can only be used once. Files will be automatically deleted after download for your privacy.
         </p>
     </div>
@@ -62,7 +62,7 @@
             <li>{{ warning }}</li>
             {% endfor %}
         </ul>
-        <p style="margin-top: 15px;">
+        <p class="dedup-note">
             <strong>Note:</strong> These warnings don't prevent your file from being processed, but they may indicate missing data fields.
             Check the <a href="/mappings">mappings page</a> to see expected column names, or contact
             <a href="http://henrypost.github.io/" target="_blank">Henry Post</a> if you need additional fields mapped.

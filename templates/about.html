@@ -62,7 +62,7 @@
     </div>
 
     <h2>Privacy & Data Security</h2>
-    <div class="highlight-box" style="background-color: #e8f8e8; border-left: 4px solid #28a745;">
+    <div class="highlight-box privacy-box">
         <p><strong>Your data is not stored or retained.</strong></p>
         <p>This tool processes your files in real-time and immediately discards them:</p>
         <ul>
@@ -85,13 +85,13 @@
     </ul>
 
     <h2>Version Information</h2>
-    <div class="highlight-box" style="background-color: #f9f9f9;">
-        <ul style="list-style: none; padding-left: 0;">
+    <div class="highlight-box version-box">
+        <ul class="version-list">
             <li><strong>Git Commit:</strong> <code>{{ git_hash }}</code></li>
             <li><strong>Git Branch:</strong> <code>{{ git_branch }}</code></li>
             <li><strong>Build Date:</strong> <code>{{ git_date }}</code></li>
         </ul>
-        <p style="margin-top: 15px; font-size: 0.9em;">
+        <p class="version-link">
             <a href="https://github.com/meltingscales/CAREShelterDonationDataAggregation/commit/{{ git_hash }}" target="_blank" rel="noopener noreferrer">View this commit on GitHub →</a>
         </p>
     </div>

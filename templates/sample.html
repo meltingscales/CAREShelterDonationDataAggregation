@@ -19,8 +19,8 @@
 <div class="sheet-section">
     <h2>{{ sheet.sheet_name }} Sheet</h2>
     <p>Sheet name must be: <code>{{ sheet.sheet_name }}</code></p>
-    <div style="margin: 15px 0;">
-        <a href="/sample/download/{{ sheet.sheet_name }}" class="download-btn" style="background-color: #28a745;">
+    <div class="sheet-download-section">
+        <a href="/sample/download/{{ sheet.sheet_name }}" class="download-btn">
             Download {{ sheet.sheet_name }} Sample CSV
         </a>
     </div>
@@ -47,7 +47,7 @@
 </div>
 {% endfor %}
 
-<div class="sample-info" style="margin-top: 40px;">
+<div class="sample-info sample-info-bottom">
     <h3>How to Use This Sample Data</h3>
     <ol>
         <li>Create a new Excel file (.xlsx)</li>
@@ -59,9 +59,9 @@
     <p><strong>Note:</strong> You don't need to include all sheets - only include the sheets that contain data you want to aggregate.</p>
 </div>
 
-<div style="text-align: center; margin: 40px 0;">
+<div class="centered-section">
     <a href="/" class="download-btn">← Back to Upload</a>
-    <a href="/mappings" class="download-btn" style="background-color: #0066cc;">View Field Mappings</a>
+    <a href="/mappings" class="btn btn-primary">View Field Mappings</a>
 </div>
 
 {% endblock %}
