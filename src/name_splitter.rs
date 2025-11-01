@@ -48,12 +48,6 @@ pub fn get_algorithms() -> Vec<NameSplitAlgorithm> {
             last_name_column: "SplitByLastSpace_LastName".to_string(),
         },
         NameSplitAlgorithm {
-            name: "SplitByComma".to_string(),
-            description: "Splits by comma: 'Smith, Alice' → First='Alice', Last='Smith'".to_string(),
-            first_name_column: "SplitByComma_FirstName".to_string(),
-            last_name_column: "SplitByComma_LastName".to_string(),
-        },
-        NameSplitAlgorithm {
             name: "SplitByParentheses".to_string(),
             description: "Extracts from parentheses: 'Alice (Annie) Smith' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitByParentheses_FirstName".to_string(),
@@ -76,12 +70,6 @@ pub fn get_algorithms() -> Vec<NameSplitAlgorithm> {
             description: "Takes first name before 'and': 'Alice and Bob Smith' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitByAndFirstOnly_FirstName".to_string(),
             last_name_column: "SplitByAndFirstOnly_LastName".to_string(),
-        },
-        NameSplitAlgorithm {
-            name: "SplitBySlash".to_string(),
-            description: "Splits by slash: 'Alice/Smith' → First='Alice', Last='Smith'".to_string(),
-            first_name_column: "SplitBySlash_FirstName".to_string(),
-            last_name_column: "SplitBySlash_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByHyphen".to_string(),
@@ -115,22 +103,6 @@ pub fn split_by_last_space(name: &str) -> NameSplitResult {
         NameSplitResult {
             first_name: trimmed[..space_pos].trim().to_string(),
             last_name: trimmed[space_pos + 1..].trim().to_string(),
-        }
-    } else {
-        NameSplitResult {
-            first_name: trimmed.to_string(),
-            last_name: String::new(),
-        }
-    }
-}
-
-/// Split by comma (common format: "Last, First")
-pub fn split_by_comma(name: &str) -> NameSplitResult {
-    let trimmed = name.trim();
-    if let Some(comma_pos) = trimmed.find(',') {
-        NameSplitResult {
-            first_name: trimmed[comma_pos + 1..].trim().to_string(),
-            last_name: trimmed[..comma_pos].trim().to_string(),
         }
     } else {
         NameSplitResult {
@@ -218,22 +190,6 @@ pub fn split_by_and_first_only(name: &str) -> NameSplitResult {
     split_by_space(name)
 }
 
-/// Split by slash
-pub fn split_by_slash(name: &str) -> NameSplitResult {
-    let trimmed = name.trim();
-    if let Some(slash_pos) = trimmed.find('/') {
-        NameSplitResult {
-            first_name: trimmed[..slash_pos].trim().to_string(),
-            last_name: trimmed[slash_pos + 1..].trim().to_string(),
-        }
-    } else {
-        NameSplitResult {
-            first_name: trimmed.to_string(),
-            last_name: String::new(),
-        }
-    }
-}
-
 /// Split by hyphen
 pub fn split_by_hyphen(name: &str) -> NameSplitResult {
     let trimmed = name.trim();
@@ -255,12 +211,10 @@ pub fn apply_all_algorithms(name: &str) -> Vec<(String, NameSplitResult)> {
     vec![
         ("SplitBySpace".to_string(), split_by_space(name)),
         ("SplitByLastSpace".to_string(), split_by_last_space(name)),
-        ("SplitByComma".to_string(), split_by_comma(name)),
         ("SplitByParentheses".to_string(), split_by_parentheses(name)),
         ("SplitByParenthesesNickname".to_string(), split_by_parentheses_nickname(name)),
         ("SplitByAnd".to_string(), split_by_and(name)),
         ("SplitByAndFirstOnly".to_string(), split_by_and_first_only(name)),
-        ("SplitBySlash".to_string(), split_by_slash(name)),
         ("SplitByHyphen".to_string(), split_by_hyphen(name)),
     ]
 }
@@ -284,22 +238,8 @@ mod tests {
     }
 
     #[test]
-    fn test_split_by_comma() {
-        let result = split_by_comma("Smith, Alice");
-        assert_eq!(result.first_name, "Alice");
-        assert_eq!(result.last_name, "Smith");
-    }
-
-    #[test]
     fn test_split_by_parentheses() {
         let result = split_by_parentheses("Alice (Annie) Smith");
-        assert_eq!(result.first_name, "Alice");
-        assert_eq!(result.last_name, "Smith");
-    }
-
-    #[test]
-    fn test_split_by_slash() {
-        let result = split_by_slash("Alice/Smith");
         assert_eq!(result.first_name, "Alice");
         assert_eq!(result.last_name, "Smith");
     }
