@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Email then Name Deduplication - C.A.R.E. Shelter Donation Data Aggregation{% endblock %}
+
+{% block content %}
+<h1>Email then Name Deduplication</h1>
+
+<div class="instructions">
+    <h2>About This Tool</h2>
+    <p>
+        This tool performs deduplication on your Excel spreadsheet data using email addresses
+        as the primary key and first+last name combination as a fallback. Unlike the main
+        aggregation tool, this preserves all your original columns and sheet structure.
+    </p>
+
+    <h3>How It Works</h3>
+    <ul>
+        <li>Upload any Excel file (.xls or .xlsx)</li>
+        <li>The tool will process <strong>all sheets</strong> in your workbook</li>
+        <li>Deduplication logic:
+            <ul>
+                <li>Primary key: <strong>Email address</strong> (case-insensitive)</li>
+                <li>Fallback key: <strong>First Name + Last Name</strong> (case-insensitive)</li>
+                <li>Records with no email AND no name are skipped</li>
+            </ul>
+        </li>
+        <li>All your original columns are preserved</li>
+        <li>Download the deduplicated data as an XLSX file</li>
+        <li>View a detailed deduplication log showing what was merged</li>
+    </ul>
+
+    <h3>Deduplication Rules</h3>
+    <div class="dedup-rules">
+        <ol>
+            <li><strong>Email-based matching:</strong> Records with the same email address (case-insensitive) are considered duplicates</li>
+            <li><strong>Name-based fallback:</strong> If no email is present, records with the same First Name + Last Name combination are considered duplicates</li>
+            <li><strong>First occurrence wins:</strong> When duplicates are found, the first occurrence is kept and subsequent ones are removed</li>
+            <li><strong>Sheet-by-sheet:</strong> Deduplication is performed within each sheet independently</li>
+        </ol>
+    </div>
+
+    <h3>Example</h3>
+    <p>
+        If your spreadsheet has these records:
+    </p>
+    <table class="example-table">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>First Name</th>
+                <th>Last Name</th>
+                <th>Phone</th>
+                <th>Address</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>john@example.com</td>
+                <td>John</td>
+                <td>Doe</td>
+                <td>555-1234</td>
+                <td>123 Main St</td>
+            </tr>
+            <tr style="background-color: #ffe6e6;">
+                <td>JOHN@EXAMPLE.COM</td>
+                <td>Johnny</td>
+                <td>Doe</td>
+                <td>555-5678</td>
+                <td>456 Oak Ave</td>
+            </tr>
+            <tr>
+                <td></td>
+                <td>Jane</td>
+                <td>Smith</td>
+                <td>555-9999</td>
+                <td>789 Elm St</td>
+            </tr>
+            <tr style="background-color: #ffe6e6;">
+                <td></td>
+                <td>Jane</td>
+                <td>Smith</td>
+                <td>555-8888</td>
+                <td>321 Pine Rd</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        Result: 2 unique records (John Doe and Jane Smith). The highlighted rows are duplicates that will be removed.
+    </p>
+</div>
+
+<div class="privacy-notice">
+    <p><strong>🔒 Privacy First:</strong> Your data is never stored. Files are processed in memory and immediately deleted after conversion.</p>
+</div>
+
+<div class="upload-form">
+    <h2>Upload Spreadsheet for Deduplication</h2>
+    <form action="/email-name-dedup/process" method="post" enctype="multipart/form-data">
+        <label for="file">Select Excel File:</label>
+        <input type="file" id="file" name="file" accept=".xls,.xlsx" required>
+
+        <br><br>
+
+        <button type="submit">Process and Download</button>
+    </form>
+
+    <p class="form-hint">
+        <strong>Note:</strong> The tool will automatically detect Email, First, and Last name columns.
+        Common variations like "EMail", "First Name", "Last Name" are supported.
+    </p>
+</div>
+
+<div class="link">
+    <a href="/">Back to Home</a> |
+    <a href="/faq">FAQ</a> |
+    <a href="/about">About</a>
+</div>
+
+<style>
+.dedup-rules {
+    background-color: var(--bg-secondary);
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
+.dedup-rules ol {
+    margin: 10px 0 0 20px;
+}
+
+.dedup-rules li {
+    margin-bottom: 10px;
+}
+
+.example-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    font-size: 0.9em;
+}
+
+.example-table th,
+.example-table td {
+    border: 1px solid var(--border-color);
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.example-table th {
+    background-color: var(--primary-color);
+    color: white;
+    font-weight: 600;
+}
+
+.example-table tbody tr:nth-child(odd) {
+    background-color: var(--bg-secondary);
+}
+
+.form-hint {
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+</style>
+{% endblock %}

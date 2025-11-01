@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Deduplication Complete - C.A.R.E. Shelter Donation Data Aggregation{% endblock %}
+
+{% block content %}
+<h1>✓ Deduplication Complete</h1>
+
+<div class="success-message">
+    <h2>Your file has been deduplicated successfully!</h2>
+    <p>Download your deduplicated Excel file and deduplication log using the buttons below.</p>
+</div>
+
+<div class="stats-summary">
+    <h3>Summary</h3>
+    <table class="stats-table">
+        <tr>
+            <td><strong>Sheets Processed:</strong></td>
+            <td>{{ total_sheets }}</td>
+        </tr>
+        <tr>
+            <td><strong>Total Rows Before:</strong></td>
+            <td>{{ total_rows_before }}</td>
+        </tr>
+        <tr>
+            <td><strong>Total Rows After:</strong></td>
+            <td>{{ total_rows_after }}</td>
+        </tr>
+        <tr class="highlight-row">
+            <td><strong>Duplicates Removed:</strong></td>
+            <td>{{ total_duplicates_removed }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="download-section">
+    <h3>Download Files</h3>
+    <div class="download-buttons">
+        <a href="/download-xlsx/{{ session_id }}" class="download-button primary">
+            📥 Download Deduplicated Excel File
+        </a>
+        <a href="/download-xlsx-log/{{ session_id }}" class="download-button secondary">
+            📄 Download Deduplication Log
+        </a>
+    </div>
+    <p class="expiry-notice">
+        ⏱️ These download links will expire in 1 minute for security reasons.
+    </p>
+</div>
+
+<div class="log-section">
+    <h3>Deduplication Log</h3>
+    <details open>
+        <summary>Click to expand/collapse log</summary>
+        <pre class="log-content">{{ deduplication_log }}</pre>
+    </details>
+</div>
+
+<div class="link">
+    <a href="/email-name-dedup">Process Another File</a> |
+    <a href="/">Back to Home</a>
+</div>
+
+<style>
+.success-message {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
+.success-message h2 {
+    margin-top: 0;
+    color: #155724;
+}
+
+.stats-summary {
+    background-color: var(--bg-secondary);
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
+.stats-table {
+    width: 100%;
+    max-width: 500px;
+    border-collapse: collapse;
+}
+
+.stats-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.stats-table tr:last-child td {
+    border-bottom: none;
+}
+
+.stats-table td:last-child {
+    text-align: right;
+    font-weight: 600;
+}
+
+.highlight-row {
+    background-color: #fff3cd;
+}
+
+.highlight-row td {
+    font-size: 1.1em;
+}
+
+.download-section {
+    margin: 30px 0;
+}
+
+.download-buttons {
+    display: flex;
+    gap: 15px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.download-button {
+    display: inline-block;
+    padding: 15px 30px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.download-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.download-button.primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.download-button.secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.expiry-notice {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+    margin-top: 10px;
+}
+
+.log-section {
+    margin: 30px 0;
+}
+
+.log-section details {
+    background-color: var(--bg-secondary);
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.log-section summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 5px;
+    user-select: none;
+}
+
+.log-section summary:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+}
+
+.log-content {
+    margin-top: 15px;
+    padding: 15px;
+    background-color: var(--code-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    max-height: 500px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+</style>
+{% endblock %}

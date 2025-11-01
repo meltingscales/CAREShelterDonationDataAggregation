@@ -29,6 +29,7 @@ use care_shelter_donation_aggregation::{
     get_all_sheet_mappings, get_field_descriptions, DONORSNAP_FIELDS_WE_CARE_ABOUT,
     normalize_phone, normalize_state, deduplicate_multi_sheet, FieldDescription,
     DEDUPLICATION_PRIORITY, get_algorithms, apply_all_algorithms, NameSplitAlgorithm,
+    read_all_sheets, write_xlsx_to_bytes, deduplicate_sheet_rows, data_to_string,
 };
 use csv::{Writer, StringRecord};
 use std::collections::HashMap;
@@ -178,6 +179,21 @@ struct NameSplitterResult {
     name_column: String,
 }
 
+#[derive(Template)]
+#[template(path = "email_name_dedup.html")]
+struct EmailNameDedupTemplate {}
+
+#[derive(Template)]
+#[template(path = "email_name_dedup_success.html")]
+struct EmailNameDedupSuccessTemplate {
+    session_id: String,
+    total_sheets: usize,
+    total_rows_before: usize,
+    total_rows_after: usize,
+    total_duplicates_removed: usize,
+    deduplication_log: String,
+}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -250,17 +266,19 @@ struct ProcessResult {
 // PRIVACY: Download link expiration time in seconds
 const DOWNLOAD_EXPIRY_SECONDS: u64 = 60; // 1 minute
 
-// Temporary storage for CSV files with automatic cleanup
+// Temporary storage for CSV and XLSX files with automatic cleanup
 // PRIVACY: Data is stored only in memory and automatically cleaned up after 1 minute or on download
 #[derive(Clone)]
 struct CsvStorage {
     data: Arc<Mutex<HashMap<String, (String, Option<String>, String, Instant)>>>,
+    xlsx_data: Arc<Mutex<HashMap<String, (Vec<u8>, String, Instant)>>>,
 }
 
 impl CsvStorage {
     fn new() -> Self {
         Self {
             data: Arc::new(Mutex::new(HashMap::new())),
+            xlsx_data: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -296,6 +314,30 @@ impl CsvStorage {
     fn remove_session(&self, session_id: &str) {
         let mut storage = self.data.lock().unwrap();
         storage.remove(session_id);
+    }
+
+    fn store_xlsx(&self, xlsx_data: Vec<u8>, log: String) -> String {
+        let session_id = Uuid::new_v4().to_string();
+        let mut storage = self.xlsx_data.lock().unwrap();
+
+        // Clean up old entries (older than DOWNLOAD_EXPIRY_SECONDS)
+        let now = Instant::now();
+        storage.retain(|_, (_, _, timestamp)| {
+            now.duration_since(*timestamp) < Duration::from_secs(DOWNLOAD_EXPIRY_SECONDS)
+        });
+
+        storage.insert(session_id.clone(), (xlsx_data, log, now));
+        session_id
+    }
+
+    fn retrieve_xlsx(&self, session_id: &str) -> Option<Vec<u8>> {
+        let storage = self.xlsx_data.lock().unwrap();
+        storage.get(session_id).map(|(xlsx_data, _, _)| xlsx_data.clone())
+    }
+
+    fn retrieve_xlsx_log(&self, session_id: &str) -> Option<String> {
+        let storage = self.xlsx_data.lock().unwrap();
+        storage.get(session_id).map(|(_, log, _)| log.clone())
     }
 }
 
@@ -340,6 +382,10 @@ async fn main() {
         .route("/sample/download/:sheet_name", get(download_sample_csv))
         .route("/name-splitter", get(name_splitter_page))
         .route("/name-splitter/process", post(process_name_splitter))
+        .route("/email-name-dedup", get(email_name_dedup_page))
+        .route("/email-name-dedup/process", post(process_email_name_dedup))
+        .route("/download-xlsx/:session_id", get(download_xlsx))
+        .route("/download-xlsx-log/:session_id", get(download_xlsx_log))
         .route("/upload", post(upload_file))
         .route("/download/:session_id", get(download_csv))
         .route("/download-duplicates/:session_id", get(download_duplicates_csv))
@@ -1371,19 +1417,7 @@ fn process_spreadsheet(file_path: &str, filename: &str) -> Result<ProcessResult,
     })
 }
 
-fn data_to_string(data: &Data) -> String {
-    match data {
-        Data::String(s) => s.clone(),
-        Data::Float(f) => f.to_string(),
-        Data::Int(i) => i.to_string(),
-        Data::DateTime(dt) => dt.to_string(),
-        Data::DateTimeIso(s) => s.clone(),
-        Data::DurationIso(s) => s.clone(),
-        Data::Bool(b) => b.to_string(),
-        Data::Error(_) => String::new(),
-        Data::Empty => String::new(),
-    }
-}
+// data_to_string is now imported from xlsx_utils module
 
 fn extract_sheet_data(
     file_path: &str,
@@ -1888,4 +1922,208 @@ fn process_name_splitting(file_path: &str, filename: &str, name_column: &str) ->
     })?;
 
     Ok(csv_data)
+}
+
+async fn email_name_dedup_page() -> EmailNameDedupTemplate {
+    EmailNameDedupTemplate {}
+}
+
+async fn process_email_name_dedup(
+    State(storage): State<CsvStorage>,
+    mut multipart: Multipart,
+) -> Response {
+    // Parse multipart form data
+    let mut file_data: Option<bytes::Bytes> = None;
+    let mut filename = String::from("unknown");
+
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to parse form data: {}", e),
+                };
+                return error_template.into_response();
+            }
+        };
+
+        if field.name() == Some("file") {
+            filename = field.file_name().unwrap_or("unknown").to_string();
+            file_data = match field.bytes().await {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    let error_template = ErrorTemplate {
+                        error_message: format!("Failed to read uploaded file: {}", e),
+                    };
+                    return error_template.into_response();
+                }
+            };
+        }
+    }
+
+    // Validate input
+    let file_data = match file_data {
+        Some(d) => d,
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: "No file was uploaded. Please select an Excel file and try again.".to_string(),
+            };
+            return error_template.into_response();
+        }
+    };
+
+    // Save to temporary file
+    let temp_file = match NamedTempFile::new() {
+        Ok(f) => f,
+        Err(e) => {
+            let error_template = ErrorTemplate {
+                error_message: format!("Failed to create temporary file: {}", e),
+            };
+            return error_template.into_response();
+        }
+    };
+    let (mut file, path) = temp_file.into_parts();
+
+    if let Err(e) = tokio::task::block_in_place(|| {
+        std::io::Write::write_all(&mut file, &file_data)
+    }) {
+        let error_template = ErrorTemplate {
+            error_message: format!("Failed to save file: {}", e),
+        };
+        return error_template.into_response();
+    }
+
+    // Process the file
+    match process_xlsx_deduplication(path.to_str().unwrap(), &filename) {
+        Ok((xlsx_bytes, log, total_sheets, total_before, total_after, total_dupes)) => {
+            let session_id = storage.store_xlsx(xlsx_bytes, log.clone());
+            let success_template = EmailNameDedupSuccessTemplate {
+                session_id,
+                total_sheets,
+                total_rows_before: total_before,
+                total_rows_after: total_after,
+                total_duplicates_removed: total_dupes,
+                deduplication_log: log,
+            };
+            success_template.into_response()
+        }
+        Err(e) => {
+            let error_template = ErrorTemplate {
+                error_message: e,
+            };
+            error_template.into_response()
+        }
+    }
+}
+
+fn process_xlsx_deduplication(
+    file_path: &str,
+    filename: &str,
+) -> Result<(Vec<u8>, String, usize, usize, usize, usize), String> {
+    // Read all sheets from the XLSX file
+    let sheets_data = read_all_sheets(file_path)
+        .map_err(|e| format!("Failed to read '{}': {}", filename, e))?;
+
+    if sheets_data.is_empty() {
+        return Err(format!("No sheets with data found in '{}'", filename));
+    }
+
+    let mut combined_log = String::new();
+    combined_log.push_str("=== EMAIL-THEN-NAME DEDUPLICATION LOG ===\n\n");
+
+    let mut deduplicated_sheets = Vec::new();
+    let mut total_before = 0;
+    let mut total_after = 0;
+    let total_sheets = sheets_data.len();
+
+    for (sheet_name, headers, rows) in sheets_data {
+        combined_log.push_str(&format!("\n--- Sheet: {} ---\n", sheet_name));
+
+        let (deduped_rows, sheet_log, before, _removed) = deduplicate_sheet_rows(&headers, rows);
+
+        total_before += before;
+        total_after += deduped_rows.len();
+
+        combined_log.push_str(&sheet_log);
+
+        deduplicated_sheets.push((sheet_name, headers, deduped_rows));
+    }
+
+    let total_dupes = total_before - total_after;
+
+    combined_log.push_str(&format!(
+        "\n=== OVERALL SUMMARY ===\n\
+         Total sheets processed: {}\n\
+         Total rows before: {}\n\
+         Total rows after: {}\n\
+         Total duplicates removed: {}\n",
+        total_sheets, total_before, total_after, total_dupes
+    ));
+
+    // Write deduplicated data to XLSX
+    let xlsx_bytes = write_xlsx_to_bytes(deduplicated_sheets)
+        .map_err(|e| format!("Failed to create output XLSX: {}", e))?;
+
+    Ok((xlsx_bytes, combined_log, total_sheets, total_before, total_after, total_dupes))
+}
+
+async fn download_xlsx(
+    State(storage): State<CsvStorage>,
+    Path(session_id): Path<String>,
+) -> Response {
+    match storage.retrieve_xlsx(&session_id) {
+        Some(xlsx_data) => {
+            (
+                [
+                    ("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                    ("Content-Disposition", "attachment; filename=\"deduplicated.xlsx\""),
+                ],
+                xlsx_data,
+            )
+                .into_response()
+        }
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: format!(
+                    "Download link has expired or is invalid.\n\n\
+                    Download links expire after {} seconds ({} minute) or after the first download for security reasons.\n\n\
+                    Please upload your file again to generate a new download.",
+                    DOWNLOAD_EXPIRY_SECONDS,
+                    DOWNLOAD_EXPIRY_SECONDS / 60
+                ),
+            };
+            error_template.into_response()
+        }
+    }
+}
+
+async fn download_xlsx_log(
+    State(storage): State<CsvStorage>,
+    Path(session_id): Path<String>,
+) -> Response {
+    match storage.retrieve_xlsx_log(&session_id) {
+        Some(log_data) => {
+            (
+                [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Disposition", "attachment; filename=\"deduplication_log.txt\""),
+                ],
+                log_data,
+            )
+                .into_response()
+        }
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: format!(
+                    "Download link has expired or is invalid.\n\n\
+                    Download links expire after {} seconds ({} minute) or after the first download for security reasons.\n\n\
+                    Please upload your file again to generate a new download.",
+                    DOWNLOAD_EXPIRY_SECONDS,
+                    DOWNLOAD_EXPIRY_SECONDS / 60
+                ),
+            };
+            error_template.into_response()
+        }
+    }
 }

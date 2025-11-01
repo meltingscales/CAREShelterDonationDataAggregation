@@ -19,6 +19,7 @@ pub mod data_mappings;
 pub mod normalization;
 pub mod deduplication;
 pub mod name_splitter;
+pub mod xlsx_utils;
 
 pub use data_mappings::{
     DONORSNAP_FIELDS_WE_CARE_ABOUT,
@@ -39,4 +40,10 @@ pub use name_splitter::{
     apply_all_algorithms,
     NameSplitResult,
     NameSplitAlgorithm,
+};
+pub use xlsx_utils::{
+    read_all_sheets,
+    write_xlsx_to_bytes,
+    deduplicate_sheet_rows,
+    data_to_string,
 };

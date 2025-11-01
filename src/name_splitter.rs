@@ -37,55 +37,55 @@ pub fn get_algorithms() -> Vec<NameSplitAlgorithm> {
     vec![
         NameSplitAlgorithm {
             name: "SplitBySpace".to_string(),
-            description: "Splits by first space: 'John Doe' → First='John', Last='Doe'".to_string(),
+            description: "Splits by first space: 'Alice Smith' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitBySpace_FirstName".to_string(),
             last_name_column: "SplitBySpace_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByLastSpace".to_string(),
-            description: "Splits by last space: 'John Q. Doe' → First='John Q.', Last='Doe'".to_string(),
+            description: "Splits by last space: 'Alice B. Smith' → First='Alice B.', Last='Smith'".to_string(),
             first_name_column: "SplitByLastSpace_FirstName".to_string(),
             last_name_column: "SplitByLastSpace_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByComma".to_string(),
-            description: "Splits by comma: 'Doe, John' → First='John', Last='Doe'".to_string(),
+            description: "Splits by comma: 'Smith, Alice' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitByComma_FirstName".to_string(),
             last_name_column: "SplitByComma_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByParentheses".to_string(),
-            description: "Extracts from parentheses: 'Giulia (Gamze) Bulut' → First='Giulia', Last='Bulut'".to_string(),
+            description: "Extracts from parentheses: 'Alice (Annie) Smith' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitByParentheses_FirstName".to_string(),
             last_name_column: "SplitByParentheses_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByParenthesesNickname".to_string(),
-            description: "Uses nickname in parentheses: 'Giulia (Gamze) Bulut' → First='Gamze', Last='Bulut'".to_string(),
+            description: "Uses nickname in parentheses: 'Alice (Annie) Smith' → First='Annie', Last='Smith'".to_string(),
             first_name_column: "SplitByParenthesesNickname_FirstName".to_string(),
             last_name_column: "SplitByParenthesesNickname_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByAnd".to_string(),
-            description: "Splits by 'and': 'Elizabeth and Robert Dusold' → First='Elizabeth and Robert', Last='Dusold'".to_string(),
+            description: "Splits by 'and': 'Alice and Bob Smith' → First='Alice and Bob', Last='Smith'".to_string(),
             first_name_column: "SplitByAnd_FirstName".to_string(),
             last_name_column: "SplitByAnd_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByAndFirstOnly".to_string(),
-            description: "Takes first name before 'and': 'Elizabeth and Robert Dusold' → First='Elizabeth', Last='Dusold'".to_string(),
+            description: "Takes first name before 'and': 'Alice and Bob Smith' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitByAndFirstOnly_FirstName".to_string(),
             last_name_column: "SplitByAndFirstOnly_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitBySlash".to_string(),
-            description: "Splits by slash: 'John/Doe' → First='John', Last='Doe'".to_string(),
+            description: "Splits by slash: 'Alice/Smith' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitBySlash_FirstName".to_string(),
             last_name_column: "SplitBySlash_LastName".to_string(),
         },
         NameSplitAlgorithm {
             name: "SplitByHyphen".to_string(),
-            description: "Splits by hyphen: 'John-Doe' → First='John', Last='Doe'".to_string(),
+            description: "Splits by hyphen: 'Alice-Smith' → First='Alice', Last='Smith'".to_string(),
             first_name_column: "SplitByHyphen_FirstName".to_string(),
             last_name_column: "SplitByHyphen_LastName".to_string(),
         },
@@ -271,43 +271,43 @@ mod tests {
 
     #[test]
     fn test_split_by_space() {
-        let result = split_by_space("John Doe");
-        assert_eq!(result.first_name, "John");
-        assert_eq!(result.last_name, "Doe");
+        let result = split_by_space("Alice Smith");
+        assert_eq!(result.first_name, "Alice");
+        assert_eq!(result.last_name, "Smith");
     }
 
     #[test]
     fn test_split_by_last_space() {
-        let result = split_by_last_space("John Q. Doe");
-        assert_eq!(result.first_name, "John Q.");
-        assert_eq!(result.last_name, "Doe");
+        let result = split_by_last_space("Alice B. Smith");
+        assert_eq!(result.first_name, "Alice B.");
+        assert_eq!(result.last_name, "Smith");
     }
 
     #[test]
     fn test_split_by_comma() {
-        let result = split_by_comma("Doe, John");
-        assert_eq!(result.first_name, "John");
-        assert_eq!(result.last_name, "Doe");
+        let result = split_by_comma("Smith, Alice");
+        assert_eq!(result.first_name, "Alice");
+        assert_eq!(result.last_name, "Smith");
     }
 
     #[test]
     fn test_split_by_parentheses() {
-        let result = split_by_parentheses("John (Doe)");
-        assert_eq!(result.first_name, "John");
-        assert_eq!(result.last_name, "Doe");
+        let result = split_by_parentheses("Alice (Annie) Smith");
+        assert_eq!(result.first_name, "Alice");
+        assert_eq!(result.last_name, "Smith");
     }
 
     #[test]
     fn test_split_by_slash() {
-        let result = split_by_slash("John/Doe");
-        assert_eq!(result.first_name, "John");
-        assert_eq!(result.last_name, "Doe");
+        let result = split_by_slash("Alice/Smith");
+        assert_eq!(result.first_name, "Alice");
+        assert_eq!(result.last_name, "Smith");
     }
 
     #[test]
     fn test_split_by_hyphen() {
-        let result = split_by_hyphen("John-Doe");
-        assert_eq!(result.first_name, "John");
-        assert_eq!(result.last_name, "Doe");
+        let result = split_by_hyphen("Alice-Smith");
+        assert_eq!(result.first_name, "Alice");
+        assert_eq!(result.last_name, "Smith");
     }
 }
