@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Name Splitter - C.A.R.E. Shelter Donation Data Aggregation{% endblock %}
+
+{% block content %}
+<h1>Name Splitter</h1>
+
+<div class="instructions">
+    <h2>About This Tool</h2>
+    <p>
+        The Name Splitter utility helps you split full names in your spreadsheet into separate
+        "First Name" and "Last Name" columns using multiple algorithms. This is useful when you have
+        a single "Name" field but need to separate it into components.
+    </p>
+
+    <h3>How It Works</h3>
+    <ul>
+        <li>Upload any Excel file (.xls or .xlsx)</li>
+        <li>Specify which column contains the names you want to split</li>
+        <li>The tool will process <strong>all sheets</strong> in your workbook</li>
+        <li>Each algorithm will add two new columns to your data</li>
+        <li>Download the result as a CSV file with all the original data plus the new name columns</li>
+    </ul>
+
+    <h3>Available Algorithms</h3>
+    <div class="algorithms-list">
+        <table>
+            <thead>
+                <tr>
+                    <th>Algorithm</th>
+                    <th>Description</th>
+                    <th>First Name Column</th>
+                    <th>Last Name Column</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for algo in algorithms %}
+                <tr>
+                    <td><strong>{{ algo.name }}</strong></td>
+                    <td>{{ algo.description }}</td>
+                    <td><code>{{ algo.first_name_column }}</code></td>
+                    <td><code>{{ algo.last_name_column }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Example</h3>
+    <p>
+        If you have a column called "Name" with values like "John Doe", "Doe, Jane", or "Bob (Smith)",
+        the tool will create multiple columns showing how each algorithm splits the name. You can then
+        choose which algorithm works best for your data.
+    </p>
+</div>
+
+<div class="privacy-notice">
+    <p><strong>🔒 Privacy First:</strong> Your data is never stored. Files are processed in memory and immediately deleted after conversion.</p>
+</div>
+
+<div class="upload-form">
+    <h2>Split Names in Your Spreadsheet</h2>
+    <form action="/name-splitter/process" method="post" enctype="multipart/form-data">
+        <label for="file">Select Excel File:</label>
+        <input type="file" id="file" name="file" accept=".xls,.xlsx" required>
+
+        <br><br>
+
+        <label for="name_column">Name Column:</label>
+        <input
+            type="text"
+            id="name_column"
+            name="name_column"
+            placeholder="e.g., Name, Full Name, Donor Name"
+            required
+            style="width: 300px; padding: 8px; margin-left: 10px;">
+
+        <br><br>
+
+        <button type="submit">Process and Download</button>
+    </form>
+
+    <p class="form-hint">
+        <strong>Tip:</strong> Make sure to enter the exact name of the column as it appears in your spreadsheet headers.
+    </p>
+</div>
+
+<div class="link">
+    <a href="/">Back to Home</a> |
+    <a href="/faq">FAQ</a> |
+    <a href="/about">About</a>
+</div>
+
+<style>
+.algorithms-list {
+    margin: 20px 0;
+}
+
+.algorithms-list table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--bg-secondary);
+}
+
+.algorithms-list th {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.algorithms-list td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.algorithms-list tr:last-child td {
+    border-bottom: none;
+}
+
+.algorithms-list code {
+    background-color: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.form-hint {
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+
+.upload-form input[type="text"] {
+    font-size: 1em;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+</style>
+{% endblock %}

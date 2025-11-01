@@ -18,6 +18,7 @@
 pub mod data_mappings;
 pub mod normalization;
 pub mod deduplication;
+pub mod name_splitter;
 
 pub use data_mappings::{
     DONORSNAP_FIELDS_WE_CARE_ABOUT,
@@ -33,3 +34,9 @@ pub use data_mappings::{
 
 pub use normalization::{normalize_phone, normalize_state};
 pub use deduplication::{deduplicate_records, deduplicate_multi_sheet, DeduplicationResult};
+pub use name_splitter::{
+    get_algorithms,
+    apply_all_algorithms,
+    NameSplitResult,
+    NameSplitAlgorithm,
+};

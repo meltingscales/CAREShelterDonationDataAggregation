@@ -28,7 +28,7 @@ use calamine::{open_workbook_auto, Data, Reader};
 use care_shelter_donation_aggregation::{
     get_all_sheet_mappings, get_field_descriptions, DONORSNAP_FIELDS_WE_CARE_ABOUT,
     normalize_phone, normalize_state, deduplicate_multi_sheet, FieldDescription,
-    DEDUPLICATION_PRIORITY,
+    DEDUPLICATION_PRIORITY, get_algorithms, apply_all_algorithms, NameSplitAlgorithm,
 };
 use csv::{Writer, StringRecord};
 use std::collections::HashMap;
@@ -165,6 +165,19 @@ struct SheetsResponse {
 #[template(path = "orphan_mappings.html")]
 struct OrphanMappingsTemplate {}
 
+#[derive(Template)]
+#[template(path = "name_splitter.html")]
+struct NameSplitterTemplate {
+    algorithms: Vec<NameSplitAlgorithm>,
+}
+
+#[derive(Serialize, ToSchema)]
+struct NameSplitterResult {
+    csv_data: String,
+    total_rows: usize,
+    name_column: String,
+}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -178,6 +191,8 @@ struct OrphanMappingsTemplate {}
         deduplication_priority_api,
         sheets_api,
         sample_api,
+        name_splitter_algorithms_api,
+        name_splitter_process_api,
     ),
     components(
         schemas(
@@ -193,6 +208,8 @@ struct OrphanMappingsTemplate {}
             DeduplicationPriorityResponse,
             SheetsResponse,
             SampleSheetData,
+            NameSplitAlgorithm,
+            NameSplitterResult,
         )
     ),
     tags(
@@ -201,6 +218,7 @@ struct OrphanMappingsTemplate {}
         (name = "Validation", description = "File validation endpoints"),
         (name = "System", description = "System health and version information"),
         (name = "Reference", description = "Reference data and sample information"),
+        (name = "Utilities", description = "Utility tools for data processing"),
     ),
     info(
         title = "C.A.R.E. Shelter Donation Data Aggregation API",
@@ -314,10 +332,14 @@ async fn main() {
         .route("/api/deduplication-priority", get(deduplication_priority_api))
         .route("/api/sheets", get(sheets_api))
         .route("/api/sample/:sheet_name", get(sample_api))
+        .route("/api/name-splitter/algorithms", get(name_splitter_algorithms_api))
+        .route("/api/name-splitter/process", post(name_splitter_process_api))
         .merge(SwaggerUi::new("/openapi").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/faq", get(faq_page))
         .route("/sample", get(sample_page))
         .route("/sample/download/:sheet_name", get(download_sample_csv))
+        .route("/name-splitter", get(name_splitter_page))
+        .route("/name-splitter/process", post(process_name_splitter))
         .route("/upload", post(upload_file))
         .route("/download/:session_id", get(download_csv))
         .route("/download-duplicates/:session_id", get(download_duplicates_csv))
@@ -1485,4 +1507,385 @@ fn extract_sheet_data(
     }
 
     Ok((records, warnings))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/name-splitter/algorithms",
+    tag = "Utilities",
+    responses(
+        (status = 200, description = "List of available name splitting algorithms", body = Vec<NameSplitAlgorithm>)
+    )
+)]
+async fn name_splitter_algorithms_api() -> Json<Vec<NameSplitAlgorithm>> {
+    Json(get_algorithms())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/name-splitter/process",
+    tag = "Utilities",
+    responses(
+        (status = 200, description = "Successfully processed spreadsheet with name splitting", body = NameSplitterResult),
+        (status = 400, description = "Invalid file or processing error")
+    )
+)]
+async fn name_splitter_process_api(mut multipart: Multipart) -> Response {
+    let mut file_data: Option<bytes::Bytes> = None;
+    let mut filename = String::from("unknown");
+    let mut name_column: Option<String> = None;
+
+    // Parse multipart form data
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to parse form data: {}", e)
+                    }))
+                ).into_response();
+            }
+        };
+
+        match field.name() {
+            Some("file") => {
+                filename = field.file_name().unwrap_or("unknown").to_string();
+                file_data = match field.bytes().await {
+                    Ok(d) => Some(d),
+                    Err(e) => {
+                        return (
+                            axum::http::StatusCode::BAD_REQUEST,
+                            Json(serde_json::json!({
+                                "error": format!("Failed to read uploaded file: {}", e)
+                            }))
+                        ).into_response();
+                    }
+                };
+            }
+            Some("name_column") => {
+                name_column = match field.text().await {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        return (
+                            axum::http::StatusCode::BAD_REQUEST,
+                            Json(serde_json::json!({
+                                "error": format!("Failed to read name column field: {}", e)
+                            }))
+                        ).into_response();
+                    }
+                };
+            }
+            _ => {}
+        }
+    }
+
+    // Validate inputs
+    let file_data = match file_data {
+        Some(d) => d,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "No file was uploaded"
+                }))
+            ).into_response();
+        }
+    };
+
+    let name_column = match name_column {
+        Some(c) if !c.is_empty() => c,
+        _ => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Please specify the name of the column containing names to split"
+                }))
+            ).into_response();
+        }
+    };
+
+    // Save to temporary file
+    let temp_file = match NamedTempFile::new() {
+        Ok(f) => f,
+        Err(e) => {
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to create temporary file: {}", e)
+                }))
+            ).into_response();
+        }
+    };
+    let (mut file, path) = temp_file.into_parts();
+
+    if let Err(e) = tokio::task::block_in_place(|| {
+        std::io::Write::write_all(&mut file, &file_data)
+    }) {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": format!("Failed to save file: {}", e)
+            }))
+        ).into_response();
+    }
+
+    // Process the file
+    match process_name_splitting(path.to_str().unwrap(), &filename, &name_column) {
+        Ok(csv_data) => {
+            let total_rows = csv_data.lines().count().saturating_sub(1); // Subtract header
+            let result = NameSplitterResult {
+                csv_data,
+                total_rows,
+                name_column,
+            };
+            (axum::http::StatusCode::OK, Json(result)).into_response()
+        }
+        Err(e) => {
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": e
+                }))
+            ).into_response()
+        }
+    }
+}
+
+async fn name_splitter_page() -> NameSplitterTemplate {
+    NameSplitterTemplate {
+        algorithms: get_algorithms(),
+    }
+}
+
+async fn process_name_splitter(mut multipart: Multipart) -> Response {
+    let mut file_data: Option<bytes::Bytes> = None;
+    let mut filename = String::from("unknown");
+    let mut name_column: Option<String> = None;
+
+    // Parse multipart form data
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to parse form data: {}", e),
+                };
+                return error_template.into_response();
+            }
+        };
+
+        match field.name() {
+            Some("file") => {
+                filename = field.file_name().unwrap_or("unknown").to_string();
+                file_data = match field.bytes().await {
+                    Ok(d) => Some(d),
+                    Err(e) => {
+                        let error_template = ErrorTemplate {
+                            error_message: format!("Failed to read uploaded file: {}", e),
+                        };
+                        return error_template.into_response();
+                    }
+                };
+            }
+            Some("name_column") => {
+                name_column = match field.text().await {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        let error_template = ErrorTemplate {
+                            error_message: format!("Failed to read name column field: {}", e),
+                        };
+                        return error_template.into_response();
+                    }
+                };
+            }
+            _ => {}
+        }
+    }
+
+    // Validate inputs
+    let file_data = match file_data {
+        Some(d) => d,
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: "No file was uploaded. Please select an Excel file and try again.".to_string(),
+            };
+            return error_template.into_response();
+        }
+    };
+
+    let name_column = match name_column {
+        Some(c) if !c.is_empty() => c,
+        _ => {
+            let error_template = ErrorTemplate {
+                error_message: "Please specify the name of the column containing names to split.".to_string(),
+            };
+            return error_template.into_response();
+        }
+    };
+
+    // Save to temporary file
+    let temp_file = match NamedTempFile::new() {
+        Ok(f) => f,
+        Err(e) => {
+            let error_template = ErrorTemplate {
+                error_message: format!("Failed to create temporary file: {}", e),
+            };
+            return error_template.into_response();
+        }
+    };
+    let (mut file, path) = temp_file.into_parts();
+
+    if let Err(e) = tokio::task::block_in_place(|| {
+        std::io::Write::write_all(&mut file, &file_data)
+    }) {
+        let error_template = ErrorTemplate {
+            error_message: format!("Failed to save file: {}", e),
+        };
+        return error_template.into_response();
+    }
+
+    // Process the file
+    match process_name_splitting(path.to_str().unwrap(), &filename, &name_column) {
+        Ok(csv_data) => {
+            (
+                [
+                    ("Content-Type", "text/csv"),
+                    ("Content-Disposition", "attachment; filename=\"names_split.csv\""),
+                ],
+                csv_data,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            let error_template = ErrorTemplate {
+                error_message: e,
+            };
+            error_template.into_response()
+        }
+    }
+}
+
+fn process_name_splitting(file_path: &str, filename: &str, name_column: &str) -> Result<String, String> {
+    // Open the workbook
+    let mut workbook = match open_workbook_auto(file_path) {
+        Ok(wb) => wb,
+        Err(e) => {
+            return Err(format!(
+                "Failed to open '{}' as an Excel file: {}\n\n\
+                Please ensure you're uploading a valid Excel workbook (.xlsx or .xls).",
+                filename, e
+            ));
+        }
+    };
+
+    let sheet_names = workbook.sheet_names().to_vec();
+    if sheet_names.is_empty() {
+        return Err("The workbook contains no sheets.".to_string());
+    }
+
+    let mut all_output_rows = Vec::new();
+    let mut total_rows = 0;
+
+    // Process each sheet
+    for sheet_name in &sheet_names {
+        let sheet = match workbook.worksheet_range(sheet_name) {
+            Ok(s) => s,
+            Err(e) => {
+                return Err(format!("Failed to read sheet '{}': {}", sheet_name, e));
+            }
+        };
+
+        let mut rows = sheet.rows();
+
+        // Get header row
+        let headers = match rows.next() {
+            Some(row) => row.iter().map(|cell| data_to_string(cell)).collect::<Vec<String>>(),
+            None => continue, // Skip empty sheets
+        };
+
+        // Find the name column index
+        let name_col_idx = match headers.iter().position(|h| h == name_column) {
+            Some(idx) => idx,
+            None => {
+                return Err(format!(
+                    "Column '{}' not found in sheet '{}'.\n\n\
+                    Available columns:\n{}",
+                    name_column,
+                    sheet_name,
+                    headers.iter()
+                        .map(|h| format!("  • {}", h))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
+            }
+        };
+
+        // Build output header (original columns + new algorithm columns)
+        let mut output_header = headers.clone();
+        let algorithms = get_algorithms();
+        for algo in &algorithms {
+            output_header.push(algo.first_name_column.clone());
+            output_header.push(algo.last_name_column.clone());
+        }
+
+        // Only write the header once
+        if all_output_rows.is_empty() {
+            all_output_rows.push(output_header);
+        }
+
+        // Process data rows
+        for row in rows {
+            let mut output_row: Vec<String> = row.iter().map(|cell| data_to_string(cell)).collect();
+
+            // Get the name value
+            let name_value = if name_col_idx < output_row.len() {
+                output_row[name_col_idx].clone()
+            } else {
+                String::new()
+            };
+
+            // Apply all algorithms
+            let results = apply_all_algorithms(&name_value);
+            for (_, result) in results {
+                output_row.push(result.first_name);
+                output_row.push(result.last_name);
+            }
+
+            all_output_rows.push(output_row);
+            total_rows += 1;
+        }
+    }
+
+    if total_rows == 0 {
+        return Err(format!(
+            "No data rows found in any sheet of '{}'.",
+            filename
+        ));
+    }
+
+    // Write to CSV
+    let mut csv_output = Vec::new();
+    {
+        let mut wtr = Writer::from_writer(&mut csv_output);
+
+        for row in all_output_rows {
+            if let Err(e) = wtr.write_record(&row) {
+                return Err(format!("Failed to write CSV row: {}", e));
+            }
+        }
+
+        if let Err(e) = wtr.flush() {
+            return Err(format!("Failed to finalize CSV output: {}", e));
+        }
+    }
+
+    let csv_data = String::from_utf8(csv_output).map_err(|e| {
+        format!("Failed to encode CSV as UTF-8: {}", e)
+    })?;
+
+    Ok(csv_data)
 }
