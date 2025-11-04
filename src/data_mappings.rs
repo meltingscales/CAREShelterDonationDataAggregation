@@ -88,6 +88,12 @@ const FAKE_NOTES: &[&str] = &[
     "General fund",
     "Memorial donation",
 ];
+const FAKE_ANIMALS: &[&str] = &[
+    "Cat", "Dog", "Cat", "Dog", "Cat", "Cat", "Dog", "Cat", "Dog", "Cat",
+];
+const FAKE_SALUTATIONS: &[&str] = &[
+    "Ms.", "Mr.", "Dr.", "Mrs.", "Ms.", "Mr.", "Dr.", "Ms.", "Mr.", "Mrs.",
+];
 
 /// Priority order for deduplication - lower index = higher priority
 /// When duplicate records are found, data from higher priority sheets wins
@@ -95,6 +101,12 @@ pub const DEDUPLICATION_PRIORITY: &[&str] = &[
     "Check",
     "Cash",
     "CARE Volunteer List",
+    "Adult Cats",
+    "Adult Cats Foster",
+    "Feline Bottle Babies",
+    "Adult Dogs Foster",
+    "Old or Inactive Volunteers",
+    "Owner Surrender Names",
     "Qgiv",
     "ShelterLuv",
     "DonorSnap",
@@ -423,6 +435,99 @@ pub fn get_all_sheet_mappings() -> Vec<SheetMapping> {
                 ("Appeal", "Appeal"),
             ],
         },
+        // Adult Cats mappings
+        SheetMapping {
+            sheet_name: "Adult Cats",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("Salutation", "Salutation"),
+                ("EMail", "Primary Email"),
+                ("Phone", "Primary Phone"),
+                ("Address1", "Street Address 1"),
+                ("Address2", "Street Address 2"),
+                ("City", "City"),
+                ("State/Province", "State"),
+                ("Zip/Postal Code", "Zip"),
+                ("Species", "Animal"),
+            ],
+        },
+        // Adult Cats Foster mappings
+        SheetMapping {
+            sheet_name: "Adult Cats Foster",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("Salutation", "Salutation"),
+                ("EMail", "Primary Email"),
+                ("Phone", "Primary Phone"),
+                ("Address1", "Street Address 1"),
+                ("Address2", "Street Address 2"),
+                ("City", "City"),
+                ("State/Province", "State"),
+                ("Zip/Postal Code", "Zip"),
+                ("Species", "Animal"),
+            ],
+        },
+        // Feline Bottle Babies mappings
+        SheetMapping {
+            sheet_name: "Feline Bottle Babies",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("Salutation", "Salutation"),
+                ("EMail", "Primary Email"),
+                ("Phone", "Primary Phone"),
+                ("Address1", "Street Address 1"),
+                ("Address2", "Street Address 2"),
+                ("City", "City"),
+                ("State/Province", "State"),
+                ("Zip/Postal Code", "Zip"),
+                ("Species", "Animal"),
+            ],
+        },
+        // Adult Dogs Foster mappings
+        SheetMapping {
+            sheet_name: "Adult Dogs Foster",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("Salutation", "Salutation"),
+                ("EMail", "Primary Email"),
+                ("Phone", "Primary Phone"),
+                ("Address1", "Street Address 1"),
+                ("Address2", "Street Address 2"),
+                ("City", "City"),
+                ("State/Province", "State"),
+                ("Zip/Postal Code", "Zip"),
+                ("Species", "Animal"),
+            ],
+        },
+        // Old or Inactive Volunteers mappings
+        SheetMapping {
+            sheet_name: "Old or Inactive Volunteers",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("EMail", "Email"),
+                ("Species", "Animal"),
+            ],
+        },
+        // Owner Surrender Names mappings
+        SheetMapping {
+            sheet_name: "Owner Surrender Names",
+            mappings: vec![
+                ("First", "First Name"),
+                ("Last", "Last Name"),
+                ("Address1", "Intake From Address 1"),
+                ("EMail", "Intake From Email"),
+                ("Phone", "Intake From Phone"),
+                ("City", "Intake From City"),
+                ("State/Province", "Intake From State"),
+                ("Zip/Postal Code", "Intake From Zip"),
+                ("Species", "Species"),
+            ],
+        },
     ]
 }
 
@@ -441,28 +546,30 @@ pub fn generate_fake_data(source_field: &str, row_index: usize) -> String {
         "Company" | "Company Name" => if idx % 3 == 0 { "" } else { "Example Corp" }.to_string(),
 
         // Contact
-        "Email" | "EMail" | "Email Address" | "Person Primary Email" | "From Email Address" => {
+        "Email" | "EMail" | "Email Address" | "Person Primary Email" | "Primary Email" | "From Email Address" | "Intake From Email" => {
             FAKE_EMAILS[idx].to_string()
         }
-        "Phone" | "Phone Number" | "Person Primary Phone" => format!("(312) {}", FAKE_PHONES[idx]),
+        "Phone" | "Phone Number" | "Person Primary Phone" | "Primary Phone" | "Intake From Phone" => format!("(312) {}", FAKE_PHONES[idx]),
 
         // Address
         "Address"
         | "Address1"
         | "Street Address 1"
         | "Person Street Address 1"
+        | "Intake From Address 1"
         | "Address Line 1" => FAKE_ADDRESSES[idx].to_string(),
         "Billing Address"
         | "Address2"
         | "Street Address 2"
         | "Person Street Address 2"
         | "Address Line 2/District/Neighborhood" => "".to_string(),
-        "City" | "Person City" | "Town/City" => FAKE_CITIES[idx].to_string(),
+        "City" | "Person City" | "Town/City" | "Intake From City" => FAKE_CITIES[idx].to_string(),
         "State"
         | "State/Province"
         | "Person State"
+        | "Intake From State"
         | "State/Province/Region/County/Territory/Prefecture/Republic" => "IL".to_string(),
-        "Zip" | "Zip/Postal Code" | "Postal Code" | "Person Zip" => FAKE_ZIPS[idx].to_string(),
+        "Zip" | "Zip/Postal Code" | "Postal Code" | "Person Zip" | "Intake From Zip" => FAKE_ZIPS[idx].to_string(),
         "Country" => "US".to_string(),
 
         // Donation info
@@ -478,7 +585,8 @@ pub fn generate_fake_data(source_field: &str, row_index: usize) -> String {
         "Notes" | "DonationNote" | "Memo" | "Transaction Memo" | "Activity/Comment" => {
             FAKE_NOTES[idx % FAKE_NOTES.len()].to_string()
         }
-        "Salutation" => FAKE_FIRST_NAMES[idx].to_string(),
+        "Salutation" => FAKE_SALUTATIONS[idx].to_string(),
+        "Animal" | "Species" => FAKE_ANIMALS[idx].to_string(),
 
         // Other common fields
         "Status" => "Accepted".to_string(),
