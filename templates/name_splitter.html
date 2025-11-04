@@ -31,6 +31,7 @@
                     <th>Description</th>
                     <th>First Name Column</th>
                     <th>Last Name Column</th>
+                    <th>Salutation Column</th>
                 </tr>
             </thead>
             <tbody>
@@ -40,6 +41,7 @@
                     <td>{{ algo.description }}</td>
                     <td><code>{{ algo.first_name_column }}</code></td>
                     <td><code>{{ algo.last_name_column }}</code></td>
+                    <td><code>{{ algo.salutation_column }}</code></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -49,8 +51,9 @@
     <h3>Example</h3>
     <p>
         If you have a column called "Name" with values like "Alice Smith", "Smith, Alice", or "Alice (Annie) Smith",
-        the tool will create multiple columns showing how each algorithm splits the name. You can then
-        choose which algorithm works best for your data.
+        the tool will create multiple columns showing how each algorithm splits the name. Text in parentheses
+        will be extracted to the Salutation column (e.g., "Jack (Jackie) Smith" becomes First="Jack", Last="Smith",
+        Salutation="Jackie"). You can then choose which algorithm works best for your data.
     </p>
 </div>
 

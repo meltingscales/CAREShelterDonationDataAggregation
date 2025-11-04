@@ -1864,6 +1864,7 @@ fn process_name_splitting(file_path: &str, filename: &str, name_column: &str) ->
         for algo in &algorithms {
             output_header.push(algo.first_name_column.clone());
             output_header.push(algo.last_name_column.clone());
+            output_header.push(algo.salutation_column.clone());
         }
 
         // Only write the header once
@@ -1887,6 +1888,7 @@ fn process_name_splitting(file_path: &str, filename: &str, name_column: &str) ->
             for (_, result) in results {
                 output_row.push(result.first_name);
                 output_row.push(result.last_name);
+                output_row.push(result.salutation.unwrap_or_default());
             }
 
             all_output_rows.push(output_row);
