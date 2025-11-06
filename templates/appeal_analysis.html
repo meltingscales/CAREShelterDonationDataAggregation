@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Appeal Analysis - C.A.R.E. Shelter{% endblock %}
+
+{% block content %}
+<h1>Appeal Analysis</h1>
+
+<div class="instructions">
+    <h2>About This Tool</h2>
+    <p>
+        The Appeal Analysis tool helps you analyze donation appeal campaign data to understand donor patterns
+        and optimize future campaigns. Upload your appeal data to see detailed breakdowns and visualizations.
+    </p>
+
+    <h3>Analysis Features</h3>
+    <ul>
+        <li><strong>Gift Amount Analysis:</strong> Sort donations by amount (highest to lowest) to identify major donors</li>
+        <li><strong>Gift Date Tracking:</strong> Understand which e-appeals throughout the campaign are most effective</li>
+        <li><strong>Time of Day Patterns:</strong> See what times donors are most likely to make donations</li>
+        <li><strong>Geographic Distribution:</strong> Analyze donations by city or zip code to identify key donor regions</li>
+        <li><strong>Payment Method Breakdown:</strong> Track payment types (check, credit card, PayPal, Venmo) to guide future appeal strategies</li>
+    </ul>
+
+    <h3>Expected Column Names</h3>
+    <p>
+        The tool will look for these common column names (case-insensitive). If your columns have different names,
+        you can rename them before uploading:
+    </p>
+    <ul>
+        <li><strong>Gift Amount:</strong> "Amount", "Gift Amount", "Donation Amount", "Gift", "Donation"</li>
+        <li><strong>Gift Date:</strong> "Date", "Gift Date", "Donation Date", "Transaction Date"</li>
+        <li><strong>Gift Time:</strong> "Time", "Gift Time", "Donation Time", "Transaction Time"</li>
+        <li><strong>City:</strong> "City", "Donor City"</li>
+        <li><strong>Zip Code:</strong> "Zip", "Zip Code", "Postal Code", "ZIP"</li>
+        <li><strong>Payment Type:</strong> "Payment Type", "Payment Method", "Method", "Type"</li>
+    </ul>
+</div>
+
+<div class="privacy-notice">
+    <p><strong>🔒 Privacy First:</strong> Your data is never stored. Files are processed in memory and immediately deleted after analysis.</p>
+</div>
+
+<div class="upload-form">
+    <h2>Upload Appeal Data</h2>
+    <form action="/appeal-analysis/process" method="post" enctype="multipart/form-data">
+        <label for="file">Select Excel File:</label>
+        <input type="file" id="file" name="file" accept=".xls,.xlsx" required>
+
+        <br><br>
+
+        <button type="submit">Analyze Appeal Data</button>
+    </form>
+
+    <p class="form-hint">
+        <strong>Tip:</strong> Upload an Excel file (.xls or .xlsx) containing your appeal donation data.
+        All sheets in the workbook will be analyzed.
+    </p>
+</div>
+
+<div class="link">
+    <a href="/">Back to Home</a> |
+    <a href="/faq">FAQ</a> |
+    <a href="/about">About</a>
+</div>
+
+<style>
+.privacy-notice {
+    background-color: var(--bg-secondary);
+    border-left: 4px solid var(--success-color);
+    padding: 15px 20px;
+    margin: 20px 0;
+    border-radius: 4px;
+}
+
+.form-hint {
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+</style>
+{% endblock %}

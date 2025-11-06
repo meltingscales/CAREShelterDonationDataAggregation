@@ -24,7 +24,7 @@ use axum::{
 use tower_http::services::ServeDir;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower::ServiceBuilder;
-use calamine::{open_workbook_auto, Data, Reader};
+use calamine::{open_workbook_auto, Reader};
 use care_shelter_donation_aggregation::{
     get_all_sheet_mappings, get_field_descriptions, DONORSNAP_FIELDS_WE_CARE_ABOUT,
     normalize_phone, normalize_state, deduplicate_multi_sheet, FieldDescription,
@@ -194,6 +194,71 @@ struct EmailNameDedupSuccessTemplate {
     deduplication_log: String,
 }
 
+#[derive(Template)]
+#[template(path = "appeal_analysis.html")]
+struct AppealAnalysisTemplate {}
+
+#[derive(Template)]
+#[template(path = "appeal_analysis_results.html")]
+struct AppealAnalysisResultsTemplate {
+    session_id: String,
+    csv_session_id: String,
+    xlsx_session_id: String,
+    total_donations: usize,
+    total_amount: String,
+    average_donation: String,
+    median_donation: String,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+struct AppealAnalysisData {
+    top_donations: Vec<DonationAmount>,
+    by_date: Vec<DateSummary>,
+    by_time: Vec<TimeSummary>,
+    by_payment_type: Vec<PaymentTypeSummary>,
+    by_city: Vec<CitySummary>,
+    by_zip: Vec<ZipSummary>,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+struct DonationAmount {
+    amount: f64,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+struct DateSummary {
+    date: String,
+    amount: f64,
+    count: usize,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+struct TimeSummary {
+    hour: u8,
+    count: usize,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+struct PaymentTypeSummary {
+    payment_type: String,
+    count: usize,
+    amount: f64,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+struct CitySummary {
+    city: String,
+    count: usize,
+    amount: f64,
+}
+
+#[derive(Serialize, ToSchema, Clone)]
+struct ZipSummary {
+    zip: String,
+    count: usize,
+    amount: f64,
+}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -272,6 +337,7 @@ const DOWNLOAD_EXPIRY_SECONDS: u64 = 60; // 1 minute
 struct CsvStorage {
     data: Arc<Mutex<HashMap<String, (String, Option<String>, String, Instant)>>>,
     xlsx_data: Arc<Mutex<HashMap<String, (Vec<u8>, String, Instant)>>>,
+    appeal_analysis_data: Arc<Mutex<HashMap<String, (AppealAnalysisData, Instant)>>>,
 }
 
 impl CsvStorage {
@@ -279,6 +345,7 @@ impl CsvStorage {
         Self {
             data: Arc::new(Mutex::new(HashMap::new())),
             xlsx_data: Arc::new(Mutex::new(HashMap::new())),
+            appeal_analysis_data: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -339,6 +406,25 @@ impl CsvStorage {
         let storage = self.xlsx_data.lock().unwrap();
         storage.get(session_id).map(|(_, log, _)| log.clone())
     }
+
+    fn store_appeal_analysis(&self, analysis_data: AppealAnalysisData) -> String {
+        let session_id = Uuid::new_v4().to_string();
+        let mut storage = self.appeal_analysis_data.lock().unwrap();
+
+        // Clean up old entries (older than DOWNLOAD_EXPIRY_SECONDS)
+        let now = Instant::now();
+        storage.retain(|_, (_, timestamp)| {
+            now.duration_since(*timestamp) < Duration::from_secs(DOWNLOAD_EXPIRY_SECONDS)
+        });
+
+        storage.insert(session_id.clone(), (analysis_data, now));
+        session_id
+    }
+
+    fn retrieve_appeal_analysis(&self, session_id: &str) -> Option<AppealAnalysisData> {
+        let storage = self.appeal_analysis_data.lock().unwrap();
+        storage.get(session_id).map(|(data, _)| data.clone())
+    }
 }
 
 #[tokio::main]
@@ -376,6 +462,7 @@ async fn main() {
         .route("/api/sample/:sheet_name", get(sample_api))
         .route("/api/name-splitter/algorithms", get(name_splitter_algorithms_api))
         .route("/api/name-splitter/process", post(name_splitter_process_api))
+        .route("/api/appeal-analysis-data/:session_id", get(appeal_analysis_data_api))
         .merge(SwaggerUi::new("/openapi").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/faq", get(faq_page))
         .route("/sample", get(sample_page))
@@ -384,6 +471,8 @@ async fn main() {
         .route("/name-splitter/process", post(process_name_splitter))
         .route("/email-name-dedup", get(email_name_dedup_page))
         .route("/email-name-dedup/process", post(process_email_name_dedup))
+        .route("/appeal-analysis", get(appeal_analysis_page))
+        .route("/appeal-analysis/process", post(process_appeal_analysis))
         .route("/download-xlsx/:session_id", get(download_xlsx))
         .route("/download-xlsx-log/:session_id", get(download_xlsx_log))
         .route("/upload", post(upload_file))
@@ -2126,6 +2215,421 @@ async fn download_xlsx_log(
                 ),
             };
             error_template.into_response()
+        }
+    }
+}
+
+async fn appeal_analysis_page() -> AppealAnalysisTemplate {
+    AppealAnalysisTemplate {}
+}
+
+async fn process_appeal_analysis(
+    State(storage): State<CsvStorage>,
+    mut multipart: Multipart,
+) -> Response {
+    // Parse multipart form data
+    let mut file_data: Option<bytes::Bytes> = None;
+    let mut filename = String::from("unknown");
+
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to parse form data: {}", e),
+                };
+                return error_template.into_response();
+            }
+        };
+
+        if field.name() == Some("file") {
+            filename = field.file_name().unwrap_or("unknown").to_string();
+            file_data = match field.bytes().await {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    let error_template = ErrorTemplate {
+                        error_message: format!("Failed to read uploaded file: {}", e),
+                    };
+                    return error_template.into_response();
+                }
+            };
+        }
+    }
+
+    // Validate input
+    let file_data = match file_data {
+        Some(d) => d,
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: "No file was uploaded. Please select an Excel file and try again.".to_string(),
+            };
+            return error_template.into_response();
+        }
+    };
+
+    // Save to temporary file
+    let temp_file = match NamedTempFile::new() {
+        Ok(f) => f,
+        Err(e) => {
+            let error_template = ErrorTemplate {
+                error_message: format!("Failed to create temporary file: {}", e),
+            };
+            return error_template.into_response();
+        }
+    };
+    let (mut file, path) = temp_file.into_parts();
+
+    if let Err(e) = tokio::task::block_in_place(|| {
+        std::io::Write::write_all(&mut file, &file_data)
+    }) {
+        let error_template = ErrorTemplate {
+            error_message: format!("Failed to save file: {}", e),
+        };
+        return error_template.into_response();
+    }
+
+    // Process the file
+    match process_appeal_spreadsheet(path.to_str().unwrap(), &filename) {
+        Ok((csv_data, xlsx_data, analysis_data, stats)) => {
+            let csv_session_id = storage.store(csv_data, None, String::new());
+            let xlsx_session_id = storage.store_xlsx(xlsx_data, String::new());
+            let analysis_session_id = storage.store_appeal_analysis(analysis_data);
+
+            let success_template = AppealAnalysisResultsTemplate {
+                session_id: analysis_session_id.clone(),
+                csv_session_id: csv_session_id.clone(),
+                xlsx_session_id: xlsx_session_id.clone(),
+                total_donations: stats.0,
+                total_amount: format!("{:.2}", stats.1),
+                average_donation: format!("{:.2}", stats.2),
+                median_donation: format!("{:.2}", stats.3),
+            };
+            success_template.into_response()
+        }
+        Err(e) => {
+            let error_template = ErrorTemplate {
+                error_message: e,
+            };
+            error_template.into_response()
+        }
+    }
+}
+
+fn process_appeal_spreadsheet(
+    file_path: &str,
+    filename: &str,
+) -> Result<(String, Vec<u8>, AppealAnalysisData, (usize, f64, f64, f64)), String> {
+    use std::collections::BTreeMap;
+
+    // Read all sheets from the Excel file
+    let sheets_data = read_all_sheets(file_path)
+        .map_err(|e| format!("Failed to read '{}': {}", filename, e))?;
+
+    if sheets_data.is_empty() {
+        return Err(format!("No sheets with data found in '{}'", filename));
+    }
+
+    // Collect all donation records from all sheets
+    #[derive(Clone)]
+    struct DonationRecord {
+        amount: f64,
+        date: Option<String>,
+        time: Option<u8>,
+        city: Option<String>,
+        zip: Option<String>,
+        payment_type: Option<String>,
+    }
+
+    let mut all_donations: Vec<DonationRecord> = Vec::new();
+
+    for (_sheet_name, headers, rows) in &sheets_data {
+        // Find column indices (case-insensitive matching)
+        let amount_col = headers.iter().position(|h| {
+            let h_lower = h.to_lowercase();
+            h_lower == "amount" || h_lower == "gift amount" || h_lower == "donation amount"
+                || h_lower == "gift" || h_lower == "donation"
+        });
+
+        let date_col = headers.iter().position(|h| {
+            let h_lower = h.to_lowercase();
+            h_lower == "date" || h_lower == "gift date" || h_lower == "donation date"
+                || h_lower == "transaction date"
+        });
+
+        let time_col = headers.iter().position(|h| {
+            let h_lower = h.to_lowercase();
+            h_lower == "time" || h_lower == "gift time" || h_lower == "donation time"
+                || h_lower == "transaction time"
+        });
+
+        let city_col = headers.iter().position(|h| {
+            let h_lower = h.to_lowercase();
+            h_lower == "city" || h_lower == "donor city"
+        });
+
+        let zip_col = headers.iter().position(|h| {
+            let h_lower = h.to_lowercase();
+            h_lower == "zip" || h_lower == "zip code" || h_lower == "postal code" || h_lower == "zipcode"
+        });
+
+        let payment_col = headers.iter().position(|h| {
+            let h_lower = h.to_lowercase();
+            h_lower == "payment type" || h_lower == "payment method" || h_lower == "method" || h_lower == "type"
+        });
+
+        // Extract donation data from rows
+        for row in rows {
+            let amount = amount_col.and_then(|i| row.get(i)).and_then(|v| {
+                v.trim()
+                    .replace("$", "")
+                    .replace(",", "")
+                    .parse::<f64>()
+                    .ok()
+            });
+
+            if let Some(amt) = amount {
+                if amt > 0.0 {
+                    let date = date_col.and_then(|i| row.get(i)).map(|v| {
+                        let val = v.as_str();
+                        // Try to parse as date
+                        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&val, "%Y-%m-%d %H:%M:%S") {
+                            dt.format("%Y-%m-%d").to_string()
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&val, "%m/%d/%Y") {
+                            dt.format("%Y-%m-%d").to_string()
+                        } else {
+                            val.to_string()
+                        }
+                    });
+
+                    let time = time_col.and_then(|i| row.get(i)).and_then(|v| {
+                        let val = v.as_str();
+                        // Extract hour from time string
+                        if let Some(colon_pos) = val.find(':') {
+                            val[..colon_pos].trim().parse::<u8>().ok()
+                        } else {
+                            None
+                        }
+                    });
+
+                    let city = city_col.and_then(|i| row.get(i)).map(|v| {
+                        v.trim().to_string()
+                    }).filter(|s| !s.is_empty());
+
+                    let zip = zip_col.and_then(|i| row.get(i)).map(|v| {
+                        v.trim().to_string()
+                    }).filter(|s| !s.is_empty());
+
+                    let payment_type = payment_col.and_then(|i| row.get(i)).map(|v| {
+                        v.trim().to_string()
+                    }).filter(|s| !s.is_empty());
+
+                    all_donations.push(DonationRecord {
+                        amount: amt,
+                        date,
+                        time,
+                        city,
+                        zip,
+                        payment_type,
+                    });
+                }
+            }
+        }
+    }
+
+    if all_donations.is_empty() {
+        return Err("No donation records with valid amounts found in the uploaded file".to_string());
+    }
+
+    // Calculate statistics
+    let total_donations = all_donations.len();
+    let total_amount: f64 = all_donations.iter().map(|d| d.amount).sum();
+    let average_donation = total_amount / total_donations as f64;
+
+    // Calculate median
+    let mut sorted_amounts: Vec<f64> = all_donations.iter().map(|d| d.amount).collect();
+    sorted_amounts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median_donation = if sorted_amounts.len() % 2 == 0 {
+        let mid = sorted_amounts.len() / 2;
+        (sorted_amounts[mid - 1] + sorted_amounts[mid]) / 2.0
+    } else {
+        sorted_amounts[sorted_amounts.len() / 2]
+    };
+
+    // Top 10 donations by amount
+    let mut top_donations_vec = all_donations.clone();
+    top_donations_vec.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap());
+    let top_donations: Vec<DonationAmount> = top_donations_vec
+        .iter()
+        .take(10)
+        .map(|d| DonationAmount { amount: d.amount })
+        .collect();
+
+    // Group by date
+    let mut by_date_map: BTreeMap<String, (f64, usize)> = BTreeMap::new();
+    for donation in &all_donations {
+        if let Some(ref date) = donation.date {
+            let entry = by_date_map.entry(date.clone()).or_insert((0.0, 0));
+            entry.0 += donation.amount;
+            entry.1 += 1;
+        }
+    }
+    let by_date: Vec<DateSummary> = by_date_map
+        .into_iter()
+        .map(|(date, (amount, count))| DateSummary { date, amount, count })
+        .collect();
+
+    // Group by time of day
+    let mut by_time_map: BTreeMap<u8, usize> = BTreeMap::new();
+    for donation in &all_donations {
+        if let Some(hour) = donation.time {
+            *by_time_map.entry(hour).or_insert(0) += 1;
+        }
+    }
+    let by_time: Vec<TimeSummary> = by_time_map
+        .into_iter()
+        .map(|(hour, count)| TimeSummary { hour, count })
+        .collect();
+
+    // Group by payment type
+    let mut by_payment_map: HashMap<String, (usize, f64)> = HashMap::new();
+    for donation in &all_donations {
+        if let Some(ref payment_type) = donation.payment_type {
+            let entry = by_payment_map.entry(payment_type.clone()).or_insert((0, 0.0));
+            entry.0 += 1;
+            entry.1 += donation.amount;
+        }
+    }
+    let by_payment_type: Vec<PaymentTypeSummary> = by_payment_map
+        .into_iter()
+        .map(|(payment_type, (count, amount))| PaymentTypeSummary {
+            payment_type,
+            count,
+            amount,
+        })
+        .collect();
+
+    // Group by city (top 10)
+    let mut by_city_map: HashMap<String, (usize, f64)> = HashMap::new();
+    for donation in &all_donations {
+        if let Some(ref city) = donation.city {
+            let entry = by_city_map.entry(city.clone()).or_insert((0, 0.0));
+            entry.0 += 1;
+            entry.1 += donation.amount;
+        }
+    }
+    let mut by_city_vec: Vec<(String, usize, f64)> = by_city_map
+        .into_iter()
+        .map(|(city, (count, amount))| (city, count, amount))
+        .collect();
+    by_city_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    let by_city: Vec<CitySummary> = by_city_vec
+        .iter()
+        .take(10)
+        .map(|(city, count, amount)| CitySummary {
+            city: city.clone(),
+            count: *count,
+            amount: *amount,
+        })
+        .collect();
+
+    // Group by zip code (top 10)
+    let mut by_zip_map: HashMap<String, (usize, f64)> = HashMap::new();
+    for donation in &all_donations {
+        if let Some(ref zip) = donation.zip {
+            let entry = by_zip_map.entry(zip.clone()).or_insert((0, 0.0));
+            entry.0 += 1;
+            entry.1 += donation.amount;
+        }
+    }
+    let mut by_zip_vec: Vec<(String, usize, f64)> = by_zip_map
+        .into_iter()
+        .map(|(zip, (count, amount))| (zip, count, amount))
+        .collect();
+    by_zip_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    let by_zip: Vec<ZipSummary> = by_zip_vec
+        .iter()
+        .take(10)
+        .map(|(zip, count, amount)| ZipSummary {
+            zip: zip.clone(),
+            count: *count,
+            amount: *amount,
+        })
+        .collect();
+
+    let analysis_data = AppealAnalysisData {
+        top_donations,
+        by_date,
+        by_time,
+        by_payment_type,
+        by_city,
+        by_zip,
+    };
+
+    // Generate CSV output with sorted data and stats
+    let mut csv_output = Vec::new();
+    {
+        let mut wtr = Writer::from_writer(&mut csv_output);
+
+        // Write summary stats
+        wtr.write_record(&["=== APPEAL ANALYSIS SUMMARY ==="])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+        wtr.write_record(&["Total Donations", &total_donations.to_string()])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+        wtr.write_record(&["Total Amount", &format!("${:.2}", total_amount)])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+        wtr.write_record(&["Average Donation", &format!("${:.2}", average_donation)])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+        wtr.write_record(&["Median Donation", &format!("${:.2}", median_donation)])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+        wtr.write_record(&[""])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+
+        // Write all donations sorted by amount
+        wtr.write_record(&["Amount", "Date", "Time", "City", "Zip", "Payment Type"])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+
+        for donation in &top_donations_vec {
+            wtr.write_record(&[
+                format!("{:.2}", donation.amount),
+                donation.date.clone().unwrap_or_default(),
+                donation.time.map(|h| format!("{}:00", h)).unwrap_or_default(),
+                donation.city.clone().unwrap_or_default(),
+                donation.zip.clone().unwrap_or_default(),
+                donation.payment_type.clone().unwrap_or_default(),
+            ])
+            .map_err(|e| format!("CSV write error: {}", e))?;
+        }
+
+        wtr.flush().map_err(|e| format!("CSV flush error: {}", e))?;
+    }
+
+    let csv_data = String::from_utf8(csv_output)
+        .map_err(|e| format!("Failed to encode CSV as UTF-8: {}", e))?;
+
+    // Generate XLSX with sorted data
+    let xlsx_data = write_xlsx_to_bytes(sheets_data)
+        .map_err(|e| format!("Failed to generate XLSX: {}", e))?;
+
+    Ok((
+        csv_data,
+        xlsx_data,
+        analysis_data.clone(),
+        (total_donations, total_amount, average_donation, median_donation),
+    ))
+}
+
+async fn appeal_analysis_data_api(
+    State(storage): State<CsvStorage>,
+    Path(session_id): Path<String>,
+) -> Response {
+    match storage.retrieve_appeal_analysis(&session_id) {
+        Some(data) => Json(data).into_response(),
+        None => {
+            let error = serde_json::json!({
+                "error": "Analysis data not found or expired"
+            });
+            (axum::http::StatusCode::NOT_FOUND, Json(error)).into_response()
         }
     }
 }
