@@ -2572,18 +2572,18 @@ fn process_appeal_spreadsheet(
     {
         let mut wtr = Writer::from_writer(&mut csv_output);
 
-        // Write summary stats
-        wtr.write_record(&["=== APPEAL ANALYSIS SUMMARY ==="])
+        // Write summary stats (pad all rows to 6 fields to match data rows)
+        wtr.write_record(&["=== APPEAL ANALYSIS SUMMARY ===", "", "", "", "", ""])
             .map_err(|e| format!("CSV write error: {}", e))?;
-        wtr.write_record(&["Total Donations", &total_donations.to_string()])
+        wtr.write_record(&["Total Donations", &total_donations.to_string(), "", "", "", ""])
             .map_err(|e| format!("CSV write error: {}", e))?;
-        wtr.write_record(&["Total Amount", &format!("${:.2}", total_amount)])
+        wtr.write_record(&["Total Amount", &format!("${:.2}", total_amount), "", "", "", ""])
             .map_err(|e| format!("CSV write error: {}", e))?;
-        wtr.write_record(&["Average Donation", &format!("${:.2}", average_donation)])
+        wtr.write_record(&["Average Donation", &format!("${:.2}", average_donation), "", "", "", ""])
             .map_err(|e| format!("CSV write error: {}", e))?;
-        wtr.write_record(&["Median Donation", &format!("${:.2}", median_donation)])
+        wtr.write_record(&["Median Donation", &format!("${:.2}", median_donation), "", "", "", ""])
             .map_err(|e| format!("CSV write error: {}", e))?;
-        wtr.write_record(&[""])
+        wtr.write_record(&["", "", "", "", "", ""])
             .map_err(|e| format!("CSV write error: {}", e))?;
 
         // Write all donations sorted by amount
