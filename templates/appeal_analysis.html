@@ -55,6 +55,14 @@
         <strong>Tip:</strong> Upload an Excel file (.xls or .xlsx) containing your appeal donation data.
         All sheets in the workbook will be analyzed.
     </p>
+
+    <div class="sample-data-section">
+        <p><strong>Don't have data to test?</strong></p>
+        <a href="/appeal-analysis/sample" class="sample-button" download="appeal_sample_data.xlsx">
+            📥 Download Sample Raw Data
+        </a>
+        <p class="sample-hint">Download a sample Excel file with example appeal data to test the analysis tool.</p>
+    </div>
 </div>
 
 <div class="link">
@@ -76,6 +84,46 @@
     margin-top: 15px;
     font-size: 0.9em;
     color: var(--text-secondary);
+}
+
+.sample-data-section {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: #f0f7ff;
+    border: 2px dashed #3498db;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.sample-data-section p:first-child {
+    margin-top: 0;
+    font-size: 1.1em;
+    color: #2c3e50;
+}
+
+.sample-button {
+    display: inline-block;
+    background-color: #3498db;
+    color: white;
+    padding: 12px 24px;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 1em;
+    margin: 10px 0;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+}
+
+.sample-button:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+}
+
+.sample-hint {
+    margin-top: 10px;
+    margin-bottom: 0;
+    font-size: 0.9em;
+    color: #555;
 }
 </style>
 {% endblock %}

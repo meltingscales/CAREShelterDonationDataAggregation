@@ -473,6 +473,7 @@ async fn main() {
         .route("/email-name-dedup/process", post(process_email_name_dedup))
         .route("/appeal-analysis", get(appeal_analysis_page))
         .route("/appeal-analysis/process", post(process_appeal_analysis))
+        .route("/appeal-analysis/sample", get(download_appeal_sample))
         .route("/download-xlsx/:session_id", get(download_xlsx))
         .route("/download-xlsx-log/:session_id", get(download_xlsx_log))
         .route("/upload", post(upload_file))
@@ -2632,4 +2633,70 @@ async fn appeal_analysis_data_api(
             (axum::http::StatusCode::NOT_FOUND, Json(error)).into_response()
         }
     }
+}
+
+async fn download_appeal_sample() -> Response {
+    // Generate sample appeal data
+    let sample_data = vec![
+        vec!["Date", "Time", "Amount", "Payment Type", "City", "Zip"],
+        vec!["2024-11-01", "09:15", "$250.00", "Credit Card", "Chicago", "60601"],
+        vec!["2024-11-01", "10:30", "$100.00", "PayPal", "Austin", "78701"],
+        vec!["2024-11-01", "14:45", "$500.00", "Check", "Seattle", "98101"],
+        vec!["2024-11-02", "08:20", "$75.00", "Venmo", "Portland", "97201"],
+        vec!["2024-11-02", "11:00", "$1000.00", "Credit Card", "Chicago", "60602"],
+        vec!["2024-11-02", "15:30", "$150.00", "PayPal", "Denver", "80202"],
+        vec!["2024-11-03", "09:45", "$200.00", "Credit Card", "Austin", "78702"],
+        vec!["2024-11-03", "13:15", "$300.00", "Check", "Seattle", "98102"],
+        vec!["2024-11-03", "16:00", "$125.00", "Credit Card", "Chicago", "60603"],
+        vec!["2024-11-04", "10:10", "$400.00", "PayPal", "Portland", "97202"],
+        vec!["2024-11-04", "12:30", "$85.00", "Venmo", "Denver", "80203"],
+        vec!["2024-11-04", "14:20", "$175.00", "Credit Card", "Austin", "78703"],
+        vec!["2024-11-05", "08:45", "$225.00", "Check", "Seattle", "98103"],
+        vec!["2024-11-05", "11:30", "$350.00", "Credit Card", "Chicago", "60604"],
+        vec!["2024-11-05", "15:15", "$90.00", "PayPal", "Portland", "97203"],
+        vec!["2024-11-06", "09:00", "$450.00", "Credit Card", "Denver", "80204"],
+        vec!["2024-11-06", "13:45", "$115.00", "Venmo", "Austin", "78704"],
+        vec!["2024-11-06", "16:30", "$275.00", "Check", "Seattle", "98104"],
+        vec!["2024-11-07", "10:15", "$180.00", "Credit Card", "Chicago", "60605"],
+        vec!["2024-11-07", "14:00", "$320.00", "PayPal", "Portland", "97204"],
+    ];
+
+    // Convert to XLSX
+    match generate_sample_xlsx(&sample_data) {
+        Ok(xlsx_bytes) => {
+            (
+                [
+                    ("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                    ("Content-Disposition", "attachment; filename=\"appeal_sample_data.xlsx\""),
+                ],
+                xlsx_bytes,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            let error_template = ErrorTemplate {
+                error_message: format!("Failed to generate sample data: {}", e),
+            };
+            error_template.into_response()
+        }
+    }
+}
+
+fn generate_sample_xlsx(data: &[Vec<&str>]) -> Result<Vec<u8>, String> {
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    for (row_idx, row) in data.iter().enumerate() {
+        for (col_idx, cell) in row.iter().enumerate() {
+            worksheet
+                .write_string(row_idx as u32, col_idx as u16, *cell)
+                .map_err(|e| format!("Failed to write cell: {}", e))?;
+        }
+    }
+
+    let buffer = workbook
+        .save_to_buffer()
+        .map_err(|e| format!("Failed to save workbook: {}", e))?;
+
+    Ok(buffer)
 }
