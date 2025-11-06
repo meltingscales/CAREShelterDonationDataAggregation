@@ -84,6 +84,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 <script>
+// Detect dark mode
+const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+// Theme-aware colors
+const textColor = isDarkMode ? '#e0e0e0' : '#333';
+const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+const tooltipBg = isDarkMode ? 'rgba(45, 45, 45, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+const tooltipBorder = isDarkMode ? '#4a4a4a' : '#ddd';
+
 // Fetch analysis data from API
 fetch('/api/appeal-analysis-data/{{ session_id }}')
     .then(response => response.json())
@@ -95,9 +104,10 @@ fetch('/api/appeal-analysis-data/{{ session_id }}')
     });
 
 function createCharts(data) {
-    // Chart.js default settings
-    Chart.defaults.color = '#333';
+    // Chart.js default settings with dark mode support
+    Chart.defaults.color = textColor;
     Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    Chart.defaults.borderColor = gridColor;
 
     // Top Donations Chart
     if (data.top_donations && data.top_donations.length > 0) {
@@ -118,6 +128,11 @@ function createCharts(data) {
                 plugins: {
                     legend: { display: false },
                     tooltip: {
+                        backgroundColor: tooltipBg,
+                        titleColor: textColor,
+                        bodyColor: textColor,
+                        borderColor: tooltipBorder,
+                        borderWidth: 1,
                         callbacks: {
                             label: function(context) {
                                 return '$' + context.parsed.y.toFixed(2);
@@ -126,9 +141,21 @@ function createCharts(data) {
                     }
                 },
                 scales: {
+                    x: {
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor
+                        }
+                    },
                     y: {
                         beginAtZero: true,
+                        grid: {
+                            color: gridColor
+                        },
                         ticks: {
+                            color: textColor,
                             callback: function(value) {
                                 return '$' + value;
                             }
@@ -159,6 +186,11 @@ function createCharts(data) {
                 responsive: true,
                 plugins: {
                     tooltip: {
+                        backgroundColor: tooltipBg,
+                        titleColor: textColor,
+                        bodyColor: textColor,
+                        borderColor: tooltipBorder,
+                        borderWidth: 1,
                         callbacks: {
                             label: function(context) {
                                 return '$' + context.parsed.y.toFixed(2) + ' (' + data.by_date[context.dataIndex].count + ' donations)';
@@ -167,9 +199,21 @@ function createCharts(data) {
                     }
                 },
                 scales: {
+                    x: {
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor
+                        }
+                    },
                     y: {
                         beginAtZero: true,
+                        grid: {
+                            color: gridColor
+                        },
                         ticks: {
+                            color: textColor,
                             callback: function(value) {
                                 return '$' + value;
                             }
@@ -197,12 +241,31 @@ function createCharts(data) {
             options: {
                 responsive: true,
                 plugins: {
-                    legend: { display: false }
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: tooltipBg,
+                        titleColor: textColor,
+                        bodyColor: textColor,
+                        borderColor: tooltipBorder,
+                        borderWidth: 1
+                    }
                 },
                 scales: {
+                    x: {
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor
+                        }
+                    },
                     y: {
                         beginAtZero: true,
+                        grid: {
+                            color: gridColor
+                        },
                         ticks: {
+                            color: textColor,
                             stepSize: 1
                         }
                     }
@@ -241,7 +304,17 @@ function createCharts(data) {
             options: {
                 responsive: true,
                 plugins: {
+                    legend: {
+                        labels: {
+                            color: textColor
+                        }
+                    },
                     tooltip: {
+                        backgroundColor: tooltipBg,
+                        titleColor: textColor,
+                        bodyColor: textColor,
+                        borderColor: tooltipBorder,
+                        borderWidth: 1,
                         callbacks: {
                             label: function(context) {
                                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
@@ -273,13 +346,32 @@ function createCharts(data) {
                 responsive: true,
                 indexAxis: 'y',
                 plugins: {
-                    legend: { display: false }
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: tooltipBg,
+                        titleColor: textColor,
+                        bodyColor: textColor,
+                        borderColor: tooltipBorder,
+                        borderWidth: 1
+                    }
                 },
                 scales: {
                     x: {
                         beginAtZero: true,
+                        grid: {
+                            color: gridColor
+                        },
                         ticks: {
+                            color: textColor,
                             stepSize: 1
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor
                         }
                     }
                 }
@@ -305,13 +397,32 @@ function createCharts(data) {
                 responsive: true,
                 indexAxis: 'y',
                 plugins: {
-                    legend: { display: false }
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: tooltipBg,
+                        titleColor: textColor,
+                        bodyColor: textColor,
+                        borderColor: tooltipBorder,
+                        borderWidth: 1
+                    }
                 },
                 scales: {
                     x: {
                         beginAtZero: true,
+                        grid: {
+                            color: gridColor
+                        },
                         ticks: {
+                            color: textColor,
                             stepSize: 1
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor
                         }
                     }
                 }
