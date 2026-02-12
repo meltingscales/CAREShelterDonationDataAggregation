@@ -193,9 +193,13 @@ systemd-install:
 
     echo "Installing systemd service: ${SERVICE_NAME}"
 
-    # Build release binary first
-    echo "Building release binary..."
-    (cd "${REPO_DIR}" && cargo build --release)
+    # Build release binary first (skip if already built)
+    if [[ ! -f "${REPO_DIR}/target/release/web" ]]; then
+        echo "Building release binary..."
+        (cd "${REPO_DIR}" && cargo build --release)
+    else
+        echo "Binary already exists, skipping build."
+    fi
 
     # Copy and template service file
     sed -e "s|USER_PLACEHOLDER|${USER}|g" \
