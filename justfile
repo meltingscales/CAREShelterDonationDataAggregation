@@ -195,8 +195,7 @@ systemd-install:
 
     # Build release binary first
     echo "Building release binary..."
-    cd "${REPO_DIR}"
-    cargo build --release
+    (cd "${REPO_DIR}" && cargo build --release)
 
     # Copy and template service file
     sed -e "s|USER_PLACEHOLDER|${USER}|g" \
