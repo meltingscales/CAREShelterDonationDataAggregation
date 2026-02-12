@@ -170,3 +170,85 @@ gcp-domain-records domain=DOMAIN_NAME:
 # Delete a domain mapping
 gcp-domain-delete domain=DOMAIN_NAME:
     gcloud run domain-mappings delete {{domain}} --region {{GCP_REGION}} --project {{GCP_PROJECT}}
+
+# Systemd Service Setup (for GCP VM)
+# ====================================
+
+# Install as systemd service running on port 3003
+# Run with sudo
+systemd-install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ $EUID -ne 0 ]]; then
+        echo "Error: This recipe must be run as root (use sudo)."
+        exit 1
+    fi
+
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SERVICE_NAME="care-shelter-donation"
+    PORT="${PORT:-3003}"
+    REPO_DIR="${REPO_DIR:-${SCRIPT_DIR}}"
+    USER="${SUDO_USER:-root}"
+
+    echo "Installing systemd service: ${SERVICE_NAME}"
+
+    # Build release binary first
+    echo "Building release binary..."
+    cd "${REPO_DIR}"
+    cargo build --release
+
+    # Copy and template service file
+    sed -e "s|USER_PLACEHOLDER|${USER}|g" \
+        -e "s|REPO_DIR_PLACEHOLDER|${REPO_DIR}|g" \
+        "${SCRIPT_DIR}/systemd/${SERVICE_NAME}.service" \
+        > /etc/systemd/system/${SERVICE_NAME}.service
+
+    # Reload systemd and enable service
+    systemctl daemon-reload
+    systemctl enable ${SERVICE_NAME}
+    systemctl restart ${SERVICE_NAME}
+
+    echo "Service installed and started on port ${PORT}!"
+    echo ""
+    echo "Commands:"
+    echo "  sudo systemctl status ${SERVICE_NAME}"
+    echo "  sudo systemctl restart ${SERVICE_NAME}"
+    echo "  sudo journalctl -u ${SERVICE_NAME} -f"
+
+# Uninstall systemd service
+# Run with sudo
+systemd-uninstall:
+    #!/usr/bin/env bash
+    SERVICE_NAME="care-shelter-donation"
+
+    if [[ $EUID -ne 0 ]]; then
+        echo "Error: This recipe must be run as root (use sudo)."
+        exit 1
+    fi
+
+    echo "Stopping and disabling ${SERVICE_NAME}..."
+    systemctl stop ${SERVICE_NAME} 2>/dev/null || true
+    systemctl disable ${SERVICE_NAME} 2>/dev/null || true
+    rm -f /etc/systemd/system/${SERVICE_NAME}.service
+    systemctl daemon-reload
+    echo "Service uninstalled."
+
+# Show service status
+systemd-status:
+    #!/usr/bin/env bash
+    SERVICE_NAME="${SERVICE_NAME:-care-shelter-donation}"
+    systemctl status ${SERVICE_NAME}
+
+# View service logs
+systemd-logs:
+    #!/usr/bin/env bash
+    SERVICE_NAME="${SERVICE_NAME:-care-shelter-donation}"
+    journalctl -u ${SERVICE_NAME} -f
+
+# Restart the service
+systemd-restart:
+    #!/usr/bin/env bash
+    SERVICE_NAME="${SERVICE_NAME:-care-shelter-donation}"
+    systemctl restart ${SERVICE_NAME}
+    systemctl status ${SERVICE_NAME}

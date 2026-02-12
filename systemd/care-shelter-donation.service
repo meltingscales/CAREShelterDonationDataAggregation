@@ -1,0 +1,16 @@
+[Unit]
+Description=CARE Shelter Donation Data Aggregation Service
+After=network.target
+
+[Service]
+Type=simple
+User=USER_PLACEHOLDER
+WorkingDirectory=REPO_DIR_PLACEHOLDER
+Environment="PORT=3003"
+Environment="RUST_LOG=info"
+ExecStart=REPO_DIR_PLACEHOLDER/target/release/web
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
