@@ -41,6 +41,13 @@ clean:
     rm -rf .ropeproject/
     cargo clean
 
+# Clear cargo cache (frees disk space, keeps target/ intact)
+clean-cache:
+    #!/usr/bin/env bash
+    echo "Clearing cargo cache..."
+    rm -rf ~/.cargo/registry/src ~/.cargo/registry/index ~/.cargo/git/db
+    echo "Cache cleared. Previous builds in target/ preserved."
+
 # Security Scanning
 # =================
 
