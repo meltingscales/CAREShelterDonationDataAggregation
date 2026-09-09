@@ -20,6 +20,7 @@ pub mod normalization;
 pub mod deduplication;
 pub mod name_splitter;
 pub mod xlsx_utils;
+pub mod foster_adopter;
 
 pub use data_mappings::{
     DONORSNAP_FIELDS_WE_CARE_ABOUT,
@@ -47,3 +48,11 @@ pub use xlsx_utils::{
     deduplicate_sheet_rows,
     data_to_string,
 };
+pub use foster_adopter::{
+    ListType,
+    ParsedSheet,
+    detect_list_type,
+    find_email_column_index,
+    find_full_name_column_index,
+};
+pub use name_splitter::split_by_space;

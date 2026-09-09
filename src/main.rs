@@ -30,9 +30,11 @@ use care_shelter_donation_aggregation::{
     normalize_phone, normalize_state, deduplicate_multi_sheet, FieldDescription,
     DEDUPLICATION_PRIORITY, get_algorithms, apply_all_algorithms, NameSplitAlgorithm,
     read_all_sheets, write_xlsx_to_bytes, deduplicate_sheet_rows, data_to_string,
+    ParsedSheet, detect_list_type, find_email_column_index,
+    find_full_name_column_index, split_by_space,
 };
 use csv::{Writer, StringRecord};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tempfile::NamedTempFile;
@@ -195,6 +197,38 @@ struct EmailNameDedupSuccessTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "combine_foster_adopter.html")]
+struct CombineForsterAdopterTemplate {}
+
+#[derive(Clone)]
+struct DetectedSheetInfo {
+    file_name: String,
+    sheet_name: String,
+    list_type_label: String,
+    row_count: usize,
+}
+
+#[derive(Template)]
+#[template(path = "combine_foster_adopter_columns.html")]
+struct CombineColumnsTemplate {
+    session_id: String,
+    detected_sheets: Vec<DetectedSheetInfo>,
+    columns: Vec<String>,
+}
+
+#[derive(Template)]
+#[template(path = "combine_foster_adopter_success.html")]
+struct CombineSuccessTemplate {
+    session_id: String,
+    total_files: usize,
+    total_sheets: usize,
+    total_rows_before: usize,
+    total_rows_after: usize,
+    total_duplicates_removed: usize,
+    deduplication_log: String,
+}
+
+#[derive(Template)]
 #[template(path = "appeal_analysis.html")]
 struct AppealAnalysisTemplate {}
 
@@ -338,6 +372,7 @@ struct CsvStorage {
     data: Arc<Mutex<HashMap<String, (String, Option<String>, String, Instant)>>>,
     xlsx_data: Arc<Mutex<HashMap<String, (Vec<u8>, String, Instant)>>>,
     appeal_analysis_data: Arc<Mutex<HashMap<String, (AppealAnalysisData, Instant)>>>,
+    combine_data: Arc<Mutex<HashMap<String, (Vec<ParsedSheet>, Instant)>>>,
 }
 
 impl CsvStorage {
@@ -346,6 +381,7 @@ impl CsvStorage {
             data: Arc::new(Mutex::new(HashMap::new())),
             xlsx_data: Arc::new(Mutex::new(HashMap::new())),
             appeal_analysis_data: Arc::new(Mutex::new(HashMap::new())),
+            combine_data: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -425,6 +461,24 @@ impl CsvStorage {
         let storage = self.appeal_analysis_data.lock().unwrap();
         storage.get(session_id).map(|(data, _)| data.clone())
     }
+
+    fn store_combine(&self, sheets: Vec<ParsedSheet>) -> String {
+        let session_id = Uuid::new_v4().to_string();
+        let mut storage = self.combine_data.lock().unwrap();
+
+        let now = Instant::now();
+        storage.retain(|_, (_, timestamp)| {
+            now.duration_since(*timestamp) < Duration::from_secs(DOWNLOAD_EXPIRY_SECONDS)
+        });
+
+        storage.insert(session_id.clone(), (sheets, now));
+        session_id
+    }
+
+    fn retrieve_combine_and_remove(&self, session_id: &str) -> Option<Vec<ParsedSheet>> {
+        let mut storage = self.combine_data.lock().unwrap();
+        storage.remove(session_id).map(|(sheets, _)| sheets)
+    }
 }
 
 #[tokio::main]
@@ -471,6 +525,9 @@ async fn main() {
         .route("/name-splitter/process", post(process_name_splitter))
         .route("/email-name-dedup", get(email_name_dedup_page))
         .route("/email-name-dedup/process", post(process_email_name_dedup))
+        .route("/combine-foster-adopter", get(combine_foster_adopter_page))
+        .route("/combine-foster-adopter/upload", post(process_combine_upload))
+        .route("/combine-foster-adopter/process", post(process_combine_columns))
         .route("/appeal-analysis", get(appeal_analysis_page))
         .route("/appeal-analysis/process", post(process_appeal_analysis))
         .route("/appeal-analysis/sample", get(download_appeal_sample))
@@ -2218,6 +2275,308 @@ async fn download_xlsx_log(
             error_template.into_response()
         }
     }
+}
+
+async fn combine_foster_adopter_page() -> CombineForsterAdopterTemplate {
+    CombineForsterAdopterTemplate {}
+}
+
+async fn process_combine_upload(
+    State(storage): State<CsvStorage>,
+    mut multipart: Multipart,
+) -> Response {
+    let mut parsed_sheets: Vec<ParsedSheet> = Vec::new();
+    let mut file_count = 0usize;
+
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to parse uploaded files: {}", e),
+                };
+                return error_template.into_response();
+            }
+        };
+
+        if field.name() != Some("files") {
+            continue;
+        }
+
+        let filename = field.file_name().unwrap_or("unknown").to_string();
+        let data = match field.bytes().await {
+            Ok(d) => d,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to read uploaded file '{}': {}", filename, e),
+                };
+                return error_template.into_response();
+            }
+        };
+
+        if data.is_empty() {
+            continue;
+        }
+        file_count += 1;
+
+        let temp_file = match NamedTempFile::new() {
+            Ok(f) => f,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to create temporary file: {}", e),
+                };
+                return error_template.into_response();
+            }
+        };
+        let (mut file, path) = temp_file.into_parts();
+
+        if let Err(e) = tokio::task::block_in_place(|| {
+            std::io::Write::write_all(&mut file, &data)
+        }) {
+            let error_template = ErrorTemplate {
+                error_message: format!("Failed to save uploaded file '{}': {}", filename, e),
+            };
+            return error_template.into_response();
+        }
+
+        let sheets_data = match read_all_sheets(path.to_str().unwrap()) {
+            Ok(s) => s,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to read '{}': {}", filename, e),
+                };
+                return error_template.into_response();
+            }
+        };
+
+        for (sheet_name, headers, rows) in sheets_data {
+            let list_type = detect_list_type(&headers);
+            parsed_sheets.push(ParsedSheet {
+                file_name: filename.clone(),
+                sheet_name,
+                list_type,
+                headers,
+                rows,
+            });
+        }
+    }
+
+    if file_count == 0 {
+        let error_template = ErrorTemplate {
+            error_message: "No files were uploaded. Please select at least one Excel file and try again.".to_string(),
+        };
+        return error_template.into_response();
+    }
+
+    if parsed_sheets.is_empty() {
+        let error_template = ErrorTemplate {
+            error_message: "No sheets with data were found in the uploaded file(s).".to_string(),
+        };
+        return error_template.into_response();
+    }
+
+    // Union of raw column headers across all detected sheets, preserving first-seen order
+    let mut seen_columns: HashSet<String> = HashSet::new();
+    let mut columns: Vec<String> = Vec::new();
+    for sheet in &parsed_sheets {
+        for header in &sheet.headers {
+            if seen_columns.insert(header.clone()) {
+                columns.push(header.clone());
+            }
+        }
+    }
+
+    let detected_sheets: Vec<DetectedSheetInfo> = parsed_sheets
+        .iter()
+        .map(|sheet| DetectedSheetInfo {
+            file_name: sheet.file_name.clone(),
+            sheet_name: sheet.sheet_name.clone(),
+            list_type_label: sheet.list_type.label().to_string(),
+            row_count: sheet.rows.len(),
+        })
+        .collect();
+
+    let session_id = storage.store_combine(parsed_sheets);
+
+    let template = CombineColumnsTemplate {
+        session_id,
+        detected_sheets,
+        columns,
+    };
+    template.into_response()
+}
+
+async fn process_combine_columns(
+    State(storage): State<CsvStorage>,
+    mut multipart: Multipart,
+) -> Response {
+    let mut session_id: Option<String> = None;
+    let mut selected_columns: Vec<String> = Vec::new();
+
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(e) => {
+                let error_template = ErrorTemplate {
+                    error_message: format!("Failed to parse form data: {}", e),
+                };
+                return error_template.into_response();
+            }
+        };
+
+        match field.name() {
+            Some("session_id") => {
+                session_id = field.text().await.ok();
+            }
+            Some("columns") => {
+                if let Ok(value) = field.text().await {
+                    selected_columns.push(value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let session_id = match session_id {
+        Some(id) if !id.is_empty() => id,
+        _ => {
+            let error_template = ErrorTemplate {
+                error_message: "Missing session ID. Please upload your file(s) again.".to_string(),
+            };
+            return error_template.into_response();
+        }
+    };
+
+    if selected_columns.is_empty() {
+        let error_template = ErrorTemplate {
+            error_message: "Please select at least one column to keep.".to_string(),
+        };
+        return error_template.into_response();
+    }
+
+    let parsed_sheets = match storage.retrieve_combine_and_remove(&session_id) {
+        Some(sheets) => sheets,
+        None => {
+            let error_template = ErrorTemplate {
+                error_message: format!(
+                    "Upload session has expired or is invalid.\n\n\
+                    Sessions expire after {} seconds ({} minute) for security reasons.\n\n\
+                    Please upload your file(s) again.",
+                    DOWNLOAD_EXPIRY_SECONDS,
+                    DOWNLOAD_EXPIRY_SECONDS / 60
+                ),
+            };
+            return error_template.into_response();
+        }
+    };
+
+    match combine_and_merge(&parsed_sheets, &selected_columns) {
+        Ok((xlsx_bytes, log, records_before, records_after, duplicates_removed)) => {
+            let total_files: usize = {
+                let names: HashSet<&str> = parsed_sheets.iter().map(|s| s.file_name.as_str()).collect();
+                names.len()
+            };
+
+            let session_id = storage.store_xlsx(xlsx_bytes, log.clone());
+            let success_template = CombineSuccessTemplate {
+                session_id,
+                total_files,
+                total_sheets: parsed_sheets.len(),
+                total_rows_before: records_before,
+                total_rows_after: records_after,
+                total_duplicates_removed: duplicates_removed,
+                deduplication_log: log,
+            };
+            success_template.into_response()
+        }
+        Err(e) => {
+            let error_template = ErrorTemplate { error_message: e };
+            error_template.into_response()
+        }
+    }
+}
+
+/// Joins parsed adopter/foster sheets on email (fallback: name), keeping only the
+/// user-selected columns. The join key (email/name) is computed independently of
+/// which columns the user chose to keep, then fed into the same
+/// `deduplicate_multi_sheet` merge engine used by `/email-name-dedup`.
+fn combine_and_merge(
+    parsed_sheets: &[ParsedSheet],
+    selected_columns: &[String],
+) -> Result<(Vec<u8>, String, usize, usize, usize), String> {
+    let mut headers_out: Vec<&str> = selected_columns.iter().map(|s| s.as_str()).collect();
+    headers_out.push("EMail");
+    headers_out.push("First");
+    headers_out.push("Last");
+    let headers_record = StringRecord::from(headers_out);
+
+    let mut sheet_records: Vec<(String, Vec<StringRecord>)> = Vec::new();
+
+    for sheet in parsed_sheets {
+        let email_idx = find_email_column_index(&sheet.headers);
+        let name_idx = find_full_name_column_index(&sheet.headers);
+
+        let column_indices: Vec<Option<usize>> = selected_columns
+            .iter()
+            .map(|col| sheet.headers.iter().position(|h| h == col))
+            .collect();
+
+        let mut records = Vec::new();
+        for row in &sheet.rows {
+            let mut record_values: Vec<String> = column_indices
+                .iter()
+                .map(|idx| idx.and_then(|i| row.get(i)).cloned().unwrap_or_default())
+                .collect();
+
+            let email_value = email_idx.and_then(|i| row.get(i)).cloned().unwrap_or_default();
+            let full_name = name_idx.and_then(|i| row.get(i)).cloned().unwrap_or_default();
+            let split = split_by_space(&full_name);
+
+            record_values.push(email_value);
+            record_values.push(split.first_name);
+            record_values.push(split.last_name);
+
+            records.push(StringRecord::from(record_values));
+        }
+
+        let label = format!("{} [{}]", sheet.list_type.label(), sheet.file_name);
+        sheet_records.push((label, records));
+    }
+
+    let dedup_result = deduplicate_multi_sheet(&headers_record, sheet_records);
+
+    let output_rows: Vec<Vec<String>> = dedup_result
+        .records
+        .iter()
+        .map(|(record, _sheet)| {
+            record
+                .iter()
+                .take(selected_columns.len())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .collect();
+
+    let xlsx_bytes = write_xlsx_to_bytes(vec![(
+        "Combined".to_string(),
+        selected_columns.to_vec(),
+        output_rows,
+    )])
+    .map_err(|e| format!("Failed to create output XLSX: {}", e))?;
+
+    let mut log = String::new();
+    log.push_str("=== COMBINE FOSTER/ADOPTER LOG ===\n\n");
+    log.push_str(&dedup_result.log);
+
+    Ok((
+        xlsx_bytes,
+        log,
+        dedup_result.records_before_dedup,
+        dedup_result.records.len(),
+        dedup_result.duplicates_removed,
+    ))
 }
 
 async fn appeal_analysis_page() -> AppealAnalysisTemplate {

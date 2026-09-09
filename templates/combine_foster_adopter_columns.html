@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Choose Columns - Combine Foster/Adopter{% endblock %}
+
+{% block content %}
+<h1>Choose Columns to Keep</h1>
+
+<div class="instructions">
+    <p>
+        Here's what was detected in your upload. Pick which columns should appear in the combined
+        spreadsheet — matching is done automatically behind the scenes even for columns you don't keep.
+    </p>
+</div>
+
+<div class="stats-summary">
+    <h3>Detected Sheets</h3>
+    <table class="stats-table detected-table">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Sheet</th>
+                <th>Detected Type</th>
+                <th>Rows</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sheet in detected_sheets %}
+            <tr>
+                <td>{{ sheet.file_name }}</td>
+                <td>{{ sheet.sheet_name }}</td>
+                <td>{{ sheet.list_type_label }}</td>
+                <td>{{ sheet.row_count }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="upload-form">
+    <h2>Columns to Keep</h2>
+    <form action="/combine-foster-adopter/process" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="session_id" value="{{ session_id }}">
+
+        <div class="column-checkboxes">
+            {% for column in columns %}
+            <label class="column-checkbox">
+                <input type="checkbox" name="columns" value="{{ column }}" checked>
+                {{ column }}
+            </label>
+            {% endfor %}
+        </div>
+
+        <br>
+
+        <button type="submit">Combine and Download</button>
+    </form>
+</div>
+
+<div class="link">
+    <a href="/combine-foster-adopter">Start Over</a> |
+    <a href="/">Back to Home</a>
+</div>
+
+<style>
+.detected-table {
+    max-width: none;
+}
+
+.column-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+    background-color: var(--bg-secondary);
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+}
+
+.column-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: normal;
+}
+</style>
+{% endblock %}

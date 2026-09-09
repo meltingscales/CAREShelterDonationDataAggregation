@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Combine Foster/Adopter - C.A.R.E. Shelter Donation Data Aggregation{% endblock %}
+
+{% block content %}
+<h1>Combine Foster/Adopter</h1>
+
+<div class="instructions">
+    <h2>About This Tool</h2>
+    <p>
+        Upload one or more Excel exports (adopter lists, willing foster lists, or both) and this tool
+        will combine them into a single spreadsheet, merging records for the same person together.
+    </p>
+
+    <h3>How It Works</h3>
+    <ul>
+        <li>Upload any number of Excel files (.xls or .xlsx) — mix adopters and fosters freely</li>
+        <li>Each sheet is automatically classified as an Adopter list or a Foster list by looking at its column names</li>
+        <li>The tool automatically finds each sheet's email column and name column, whatever they happen to be
+            called (e.g. "Outcome To Email" vs "Primary Email")</li>
+        <li>You'll be shown the detected files/sheets and asked which columns to keep in the final spreadsheet</li>
+        <li>Records are merged using the same rules as the
+            <a href="/email-name-dedup">Email-Name Dedup</a> tool:
+            <ul>
+                <li>Primary key: <strong>Email address</strong> (case-insensitive)</li>
+                <li>Fallback key: <strong>First + Last name</strong>, split automatically from the detected name column</li>
+                <li>When the same person appears more than once, non-empty values fill in any blanks</li>
+            </ul>
+        </li>
+        <li>Download the combined data as a single XLSX file</li>
+    </ul>
+</div>
+
+<div class="privacy-notice">
+    <p><strong>🔒 Privacy First:</strong> Your data is never stored long-term. Files are processed in memory and automatically deleted shortly after conversion.</p>
+</div>
+
+<div class="upload-form">
+    <h2>Upload Spreadsheets</h2>
+    <form action="/combine-foster-adopter/upload" method="post" enctype="multipart/form-data">
+        <label for="files">Select Excel File(s):</label>
+        <input type="file" id="files" name="files" accept=".xls,.xlsx" multiple required>
+
+        <br><br>
+
+        <button type="submit">Detect Sheets and Continue</button>
+    </form>
+
+    <p class="form-hint">
+        <strong>Note:</strong> After uploading, you'll get a chance to pick which columns to keep before
+        downloading the combined spreadsheet.
+    </p>
+</div>
+
+<div class="link">
+    <a href="/">Back to Home</a> |
+    <a href="/faq">FAQ</a> |
+    <a href="/about">About</a>
+</div>
+
+<style>
+.form-hint {
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+</style>
+{% endblock %}
