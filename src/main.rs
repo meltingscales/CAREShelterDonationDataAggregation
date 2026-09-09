@@ -30,7 +30,7 @@ use care_shelter_donation_aggregation::{
     normalize_phone, normalize_state, deduplicate_multi_sheet, FieldDescription,
     DEDUPLICATION_PRIORITY, get_algorithms, apply_all_algorithms, NameSplitAlgorithm,
     read_all_sheets, write_xlsx_to_bytes, deduplicate_sheet_rows, data_to_string,
-    ParsedSheet, detect_list_type, find_email_column_index,
+    ListType, ParsedSheet, detect_list_type, find_email_column_index,
     find_full_name_column_index, split_by_space,
 };
 use csv::{Writer, StringRecord};
@@ -2376,13 +2376,21 @@ async fn process_combine_upload(
         return error_template.into_response();
     }
 
-    // Union of raw column headers across all detected sheets, preserving first-seen order
+    // Union of raw column headers across all detected sheets, preserving first-seen order.
+    // Each sheet's own detected email column (e.g. "Outcome To Email" or "Primary Email")
+    // is folded into a single canonical "Email" entry instead of listed separately.
     let mut seen_columns: HashSet<String> = HashSet::new();
     let mut columns: Vec<String> = Vec::new();
     for sheet in &parsed_sheets {
-        for header in &sheet.headers {
-            if seen_columns.insert(header.clone()) {
-                columns.push(header.clone());
+        let email_idx = find_email_column_index(&sheet.headers);
+        for (idx, header) in sheet.headers.iter().enumerate() {
+            let label = if Some(idx) == email_idx {
+                "Email".to_string()
+            } else {
+                header.clone()
+            };
+            if seen_columns.insert(label.clone()) {
+                columns.push(label);
             }
         }
     }
@@ -2512,15 +2520,32 @@ fn combine_and_merge(
     headers_out.push("Last");
     let headers_record = StringRecord::from(headers_out);
 
+    // Adopter sheets are grouped before Foster sheets so that, when a merge conflict
+    // occurs on a field like the combined "Email" column, deduplicate_multi_sheet's
+    // first-seen-wins tie-break (neither label is in DEDUPLICATION_PRIORITY, so they
+    // tie) keeps the Adopter side's value — i.e. Outcome To Email wins over Primary Email.
+    let mut ordered_sheets: Vec<&ParsedSheet> = parsed_sheets.iter().collect();
+    ordered_sheets.sort_by_key(|sheet| match sheet.list_type {
+        ListType::Adopter => 0,
+        ListType::Foster => 1,
+        ListType::Unknown => 2,
+    });
+
     let mut sheet_records: Vec<(String, Vec<StringRecord>)> = Vec::new();
 
-    for sheet in parsed_sheets {
+    for sheet in ordered_sheets {
         let email_idx = find_email_column_index(&sheet.headers);
         let name_idx = find_full_name_column_index(&sheet.headers);
 
         let column_indices: Vec<Option<usize>> = selected_columns
             .iter()
-            .map(|col| sheet.headers.iter().position(|h| h == col))
+            .map(|col| {
+                if col == "Email" {
+                    email_idx
+                } else {
+                    sheet.headers.iter().position(|h| h == col)
+                }
+            })
             .collect();
 
         let mut records = Vec::new();
