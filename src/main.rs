@@ -32,6 +32,7 @@ use care_shelter_donation_aggregation::{
     read_all_sheets, write_xlsx_to_bytes, deduplicate_sheet_rows, data_to_string,
     ListType, ParsedSheet, detect_list_type, find_email_column_index,
     find_full_name_column_index, split_by_space,
+    NameFixStyle, NameFixStyleInfo, get_styles, process_name_fixing, output_filename,
 };
 use csv::{Writer, StringRecord};
 use std::collections::{HashMap, HashSet};
@@ -182,6 +183,20 @@ struct NameSplitterResult {
 }
 
 #[derive(Template)]
+#[template(path = "name_fixer.html")]
+struct NameFixerTemplate {
+    styles: Vec<NameFixStyleInfo>,
+}
+
+#[derive(Serialize, ToSchema)]
+struct NameFixerResult {
+    csv_data: String,
+    total_rows: usize,
+    columns: String,
+    style: String,
+}
+
+#[derive(Template)]
 #[template(path = "email_name_dedup.html")]
 struct EmailNameDedupTemplate {}
 
@@ -308,6 +323,8 @@ struct ZipSummary {
         sample_api,
         name_splitter_algorithms_api,
         name_splitter_process_api,
+        name_fixer_styles_api,
+        name_fixer_process_api,
     ),
     components(
         schemas(
@@ -325,6 +342,8 @@ struct ZipSummary {
             SampleSheetData,
             NameSplitAlgorithm,
             NameSplitterResult,
+            NameFixStyleInfo,
+            NameFixerResult,
         )
     ),
     tags(
@@ -516,6 +535,8 @@ async fn main() {
         .route("/api/sample/:sheet_name", get(sample_api))
         .route("/api/name-splitter/algorithms", get(name_splitter_algorithms_api))
         .route("/api/name-splitter/process", post(name_splitter_process_api))
+        .route("/api/name-fixer/styles", get(name_fixer_styles_api))
+        .route("/api/name-fixer/process", post(name_fixer_process_api))
         .route("/api/appeal-analysis-data/:session_id", get(appeal_analysis_data_api))
         .merge(SwaggerUi::new("/openapi").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/faq", get(faq_page))
@@ -523,6 +544,8 @@ async fn main() {
         .route("/sample/download/:sheet_name", get(download_sample_csv))
         .route("/name-splitter", get(name_splitter_page))
         .route("/name-splitter/process", post(process_name_splitter))
+        .route("/name-fixer", get(name_fixer_page))
+        .route("/name-fixer/process", post(process_name_fixer))
         .route("/email-name-dedup", get(email_name_dedup_page))
         .route("/email-name-dedup/process", post(process_email_name_dedup))
         .route("/combine-foster-adopter", get(combine_foster_adopter_page))
@@ -2071,6 +2094,139 @@ fn process_name_splitting(file_path: &str, filename: &str, name_column: &str) ->
     })?;
 
     Ok(csv_data)
+}
+
+struct NameFixerForm {
+    file_data: bytes::Bytes,
+    filename: String,
+    columns: String,
+    style: NameFixStyle,
+    only_single_case: bool,
+}
+
+/// Parse the Name Fixer multipart form shared by the HTML page and the JSON API.
+/// `only_single_case` is true when the field is present (an HTML checkbox) unless its value is "false".
+async fn parse_name_fixer_form(mut multipart: Multipart) -> Result<NameFixerForm, String> {
+    let mut file_data: Option<bytes::Bytes> = None;
+    let mut filename = String::from("unknown");
+    let mut columns = String::new();
+    let mut style_id = String::from(NameFixStyle::ProperName.id());
+    let mut only_single_case = false;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| format!("Failed to parse form data: {}", e))?
+    {
+        match field.name() {
+            Some("file") => {
+                filename = field.file_name().unwrap_or("unknown").to_string();
+                file_data = Some(
+                    field.bytes().await.map_err(|e| format!("Failed to read uploaded file: {}", e))?,
+                );
+            }
+            Some(name @ ("columns" | "style" | "only_single_case")) => {
+                let name = name.to_string();
+                let text = field
+                    .text()
+                    .await
+                    .map_err(|e| format!("Failed to read form field '{}': {}", name, e))?;
+                match name.as_str() {
+                    "columns" => columns = text,
+                    "style" => style_id = text,
+                    _ => only_single_case = !text.trim().eq_ignore_ascii_case("false"),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let file_data = file_data
+        .filter(|d| !d.is_empty())
+        .ok_or_else(|| "No file was uploaded. Please select a CSV or Excel file and try again.".to_string())?;
+    let style = NameFixStyle::from_id(&style_id).ok_or_else(|| {
+        format!(
+            "Unknown normalization style '{}'. Valid styles: {}",
+            style_id,
+            NameFixStyle::ALL.iter().map(|s| s.id()).collect::<Vec<_>>().join(", ")
+        )
+    })?;
+
+    Ok(NameFixerForm { file_data, filename, columns, style, only_single_case })
+}
+
+fn run_name_fixer(form: &NameFixerForm) -> Result<(String, usize), String> {
+    tokio::task::block_in_place(|| {
+        process_name_fixing(&form.file_data, &form.filename, &form.columns, form.style, form.only_single_case)
+    })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/name-fixer/styles",
+    tag = "Utilities",
+    responses(
+        (status = 200, description = "List of available capitalization normalization styles", body = Vec<NameFixStyleInfo>)
+    )
+)]
+async fn name_fixer_styles_api() -> Json<Vec<NameFixStyleInfo>> {
+    Json(get_styles())
+}
+
+/// Multipart form fields: `file` (.csv/.xlsx/.xls), `columns` (comma-separated header names),
+/// `style` (style id, default `proper_name`), `only_single_case` (send `true` to only change
+/// values that are entirely upper- or lowercase; omitted means false).
+#[utoipa::path(
+    post,
+    path = "/api/name-fixer/process",
+    tag = "Utilities",
+    responses(
+        (status = 200, description = "Successfully normalized capitalization of the selected columns", body = NameFixerResult),
+        (status = 400, description = "Invalid file, unknown style, or column not found")
+    )
+)]
+async fn name_fixer_process_api(multipart: Multipart) -> Response {
+    let bad_request = |e: String| {
+        (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))).into_response()
+    };
+    let form = match parse_name_fixer_form(multipart).await {
+        Ok(f) => f,
+        Err(e) => return bad_request(e),
+    };
+    match run_name_fixer(&form) {
+        Ok((csv_data, total_rows)) => {
+            let result = NameFixerResult {
+                csv_data,
+                total_rows,
+                columns: form.columns,
+                style: form.style.id().to_string(),
+            };
+            (axum::http::StatusCode::OK, Json(result)).into_response()
+        }
+        Err(e) => bad_request(e),
+    }
+}
+
+async fn name_fixer_page() -> NameFixerTemplate {
+    NameFixerTemplate { styles: get_styles() }
+}
+
+async fn process_name_fixer(multipart: Multipart) -> Response {
+    let result = match parse_name_fixer_form(multipart).await {
+        Ok(form) => run_name_fixer(&form).map(|(csv_data, _)| (output_filename(&form.filename), csv_data)),
+        Err(e) => Err(e),
+    };
+    match result {
+        Ok((download_name, csv_data)) => (
+            [
+                ("Content-Type", "text/csv".to_string()),
+                ("Content-Disposition", format!("attachment; filename=\"{}\"", download_name)),
+            ],
+            csv_data,
+        )
+            .into_response(),
+        Err(error_message) => ErrorTemplate { error_message }.into_response(),
+    }
 }
 
 async fn email_name_dedup_page() -> EmailNameDedupTemplate {

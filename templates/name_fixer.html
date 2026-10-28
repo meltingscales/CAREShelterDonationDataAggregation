@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}Name Fixer - C.A.R.E. Shelter Donation Data Aggregation{% endblock %}
+
+{% block content %}
+<h1>Name Fixer</h1>
+
+<div class="instructions">
+    <h2>About This Tool</h2>
+    <p>
+        The Name Fixer cleans up inconsistent capitalization in your spreadsheet, such as names typed in
+        ALL CAPS (<code>JANE SMITH</code>) or all lowercase (<code>jane smith</code>), so they read
+        <code>Jane Smith</code>.
+    </p>
+
+    <h3>How It Works</h3>
+    <ul>
+        <li>Upload a CSV (.csv) or Excel file (.xls or .xlsx)</li>
+        <li>Enter the column(s) to fix, separated by commas (e.g. <code>First Name, Last Name</code>). Upper/lower case and extra spaces in the column names don't matter.</li>
+        <li>Pick a normalization style</li>
+        <li>Only the columns you list are changed; every other column is left exactly as it was</li>
+        <li>Download the result as a CSV file. If your workbook has several sheets, all of them are included and a <code>Source Sheet</code> column shows where each row came from.</li>
+    </ul>
+
+    <h3>Normalization Styles</h3>
+    <div class="styles-list">
+        <table>
+            <thead>
+                <tr>
+                    <th>Style</th>
+                    <th>How It Works</th>
+                    <th>Before</th>
+                    <th>After</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for style in styles %}
+                <tr>
+                    <td><strong>{{ style.name }}</strong></td>
+                    <td>{{ style.description }}</td>
+                    <td><code>{{ style.example_before }}</code></td>
+                    <td><code>{{ style.example_after }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h3>"Only fix values that are all caps or all lowercase"</h3>
+    <p>
+        With this option on (the default), a value is only changed if every letter in it is uppercase or every letter
+        is lowercase. Names that already mix upper and lower case, like <code>DeAndre</code>, <code>MacKenzie</code>
+        or <code>van der Berg</code>, were probably typed correctly and are left alone. Turn it off to re-capitalize every value.
+    </p>
+
+    <h3>Limitations</h3>
+    <p>
+        Some names can't be fixed reliably from all-caps text: <code>MACDONALD</code> becomes <code>Macdonald</code>,
+        <code>DE LA CRUZ</code> becomes <code>De La Cruz</code>, and <code>DEANDRE</code> becomes <code>Deandre</code>.
+        Give the results a quick look before importing.
+    </p>
+</div>
+
+<div class="privacy-notice">
+    <p><strong>🔒 Privacy First:</strong> Your data is never stored. Files are processed in memory and immediately deleted after conversion.</p>
+</div>
+
+<div class="upload-form">
+    <h2>Fix Capitalization in Your Spreadsheet</h2>
+    <form action="/name-fixer/process" method="post" enctype="multipart/form-data">
+        <label for="file">Select CSV or Excel File:</label>
+        <input type="file" id="file" name="file" accept=".csv,.xls,.xlsx" required>
+
+        <br><br>
+
+        <label for="columns">Column name(s) to fix:</label>
+        <input
+            type="text"
+            id="columns"
+            name="columns"
+            placeholder="First Name, Last Name"
+            aria-describedby="columns-help"
+            required
+            style="width: 300px; padding: 8px; margin-left: 10px;">
+
+        <div class="help-card" id="columns-help">
+            <p class="help-card-title">💡 How to fill in this box</p>
+            <p>
+                Type the column name exactly as it appears in the <strong>top row</strong> of your spreadsheet.
+            </p>
+            <p>
+                To fix <strong>more than one column</strong>, put a <strong>comma ( , )</strong> between each name.
+            </p>
+            <table class="help-examples">
+                <tr>
+                    <td>One column:</td>
+                    <td><code>Name</code></td>
+                </tr>
+                <tr>
+                    <td>Two columns:</td>
+                    <td><code>First Name, Last Name</code></td>
+                </tr>
+                <tr>
+                    <td>Three columns:</td>
+                    <td><code>First Name, Last Name, City</code></td>
+                </tr>
+            </table>
+            <p class="help-card-note">
+                Capital letters and extra spaces in the column names don't matter:
+                <code>first name</code> works the same as <code>First Name</code>.
+            </p>
+        </div>
+
+        <br>
+
+        <label for="style">Style:</label>
+        <select id="style" name="style" style="padding: 8px; margin-left: 10px;">
+            {% for style in styles %}
+            <option value="{{ style.id }}"{% if loop.first %} selected{% endif %}>{{ style.name }}</option>
+            {% endfor %}
+        </select>
+
+        <br><br>
+
+        <label>
+            <input type="checkbox" name="only_single_case" value="true" checked>
+            Only fix values that are all caps or all lowercase
+        </label>
+
+        <br><br>
+
+        <button type="submit">Process and Download</button>
+    </form>
+
+    <p class="form-hint">
+        <strong>Tip:</strong> Only list name or address columns. Running this on columns like email addresses,
+        IDs or state abbreviations will change their capitalization too.
+    </p>
+</div>
+
+<div class="link">
+    <a href="/">Back to Home</a> |
+    <a href="/faq">FAQ</a> |
+    <a href="/about">About</a>
+</div>
+
+<style>
+.styles-list {
+    margin: 20px 0;
+}
+
+.styles-list table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--bg-secondary);
+}
+
+.styles-list th {
+    background-color: var(--color-primary);
+    color: white;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.styles-list td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.styles-list tr:last-child td {
+    border-bottom: none;
+}
+
+.instructions code,
+.styles-list code {
+    background-color: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.help-card {
+    background-color: var(--bg-highlight-yellow);
+    border-left: 4px solid var(--input-border);
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin: 14px 0 0 0;
+    max-width: 640px;
+    font-size: 1.05em;
+    line-height: 1.5;
+}
+
+.help-card p {
+    margin: 6px 0;
+}
+
+.help-card-title {
+    font-weight: 700;
+    font-size: 1.1em;
+}
+
+.help-examples {
+    border-collapse: collapse;
+    margin: 8px 0;
+}
+
+.help-examples td {
+    padding: 4px 12px 4px 0;
+}
+
+.help-card code {
+    background-color: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+
+.help-card-note {
+    font-size: 0.95em;
+    color: var(--text-secondary);
+}
+
+.form-hint {
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+
+.upload-form input[type="text"],
+.upload-form select {
+    font-size: 1em;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+</style>
+{% endblock %}
