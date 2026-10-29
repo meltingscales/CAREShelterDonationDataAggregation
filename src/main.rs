@@ -16,7 +16,7 @@
 
 use askama::Template;
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     response::{IntoResponse, Response, Json},
     routing::{get, post},
     Router,
@@ -564,8 +564,11 @@ async fn main() {
         .with_state(csv_storage)
         .layer(
             ServiceBuilder::new()
-                // Request body size limit: 100MB
-                .layer(RequestBodyLimitLayer::new(100 * 1024 * 1024))
+                // axum's extractors (e.g. Multipart) otherwise cap bodies at 2MB on their own,
+                // so disable that and let RequestBodyLimitLayer be the single limit
+                .layer(DefaultBodyLimit::disable())
+                // Request body size limit: 1GB (keep nginx client_max_body_size in sync, see DEPLOYMENT.md)
+                .layer(RequestBodyLimitLayer::new(1024 * 1024 * 1024))
         );
 
     // Cloud Run provides PORT environment variable, default to 8080

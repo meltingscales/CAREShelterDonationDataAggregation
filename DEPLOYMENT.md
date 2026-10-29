@@ -114,6 +114,27 @@ just gcp-domain-records donate.yoursite.com
 just gcp-domain-delete donate.yoursite.com
 ```
 
+## Bare-Metal (systemd + nginx)
+
+`just systemd-install` runs the app as a systemd service on port 3003. nginx in front of it must allow
+uploads as large as the app does (1GB, set in `src/main.rs`); nginx's default is 1MB, and larger uploads
+fail with `413 Request Entity Too Large` before reaching the app.
+
+In the site's `server { ... }` block:
+
+```nginx
+client_max_body_size 1G;
+
+location / {
+    proxy_pass http://127.0.0.1:3003;
+    proxy_request_buffering off;   # stream uploads to the app instead of spooling to disk first
+    proxy_read_timeout 300s;       # large files can take a while to process
+    proxy_send_timeout 300s;
+}
+```
+
+Then check and reload: `sudo nginx -t && sudo systemctl reload nginx`.
+
 ## Common Domain Options
 
 Some domain name ideas for your service:
